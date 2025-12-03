@@ -1,0 +1,15 @@
+{
+    "Profile_ID": "testprofile",
+    "Actions": [
+        {
+            "name": "Jump",
+            "key_pressed": "SPACEBAR",
+            "input_type": "Click"
+        },
+        {
+            "name": "MoveForward",
+            "key_pressed": "w",
+            "input_type": "Hold"
+        }
+    ]
+}

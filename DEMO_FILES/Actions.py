@@ -29,6 +29,20 @@ class Actions:
     def setInputType(self, new_input_type):
         self._input_type = new_input_type
 
+    def toDict(self):
+        return {
+            "name": self._name,
+            "key_pressed": self._key_pressed,
+            "input_type": self._input_type
+        }
+
+    @staticmethod
+    def fromDict(d):
+        return Actions(
+            name=d["name"],
+            key_pressed=d["key_pressed"],
+            input_type=d["input_type"]
+        )
 #functions
 
     def compareName(self, name_check) -> bool:
