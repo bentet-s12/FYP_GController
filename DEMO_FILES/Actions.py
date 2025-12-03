@@ -9,6 +9,28 @@ class Actions:
         self.holdvalue = False
         self._is_holding = False
 
+#getters/setters
+        
+    def getName(self):
+        return self._name
+
+    def getKeyPressed(self):
+        return self._key_pressed
+
+    def getInputType(self):
+        return self._input_type
+
+    def setName(self, new_name):
+        self._name = new_name
+
+    def setKeyPressed(self, new_key):
+        self._key_pressed = new_key
+
+    def setInputType(self, new_input_type):
+        self._input_type = new_input_type
+
+#functions
+
     def compareName(self, name_check) -> bool:
         return self._name == name_check
 
@@ -43,9 +65,9 @@ if __name__ == "__main__":
     while True:
         cmd = input("Type 'hold' to hold key, 'release' to release: ").lower()
         if cmd == "hold":
-            action1.setholdvalue(True)
+           action1.setholdvalue(True)
         elif cmd == "release":
-            action1.setholdvalue(False)
+           action1.setholdvalue(False)
 
         action1.useAction("tab")
     
