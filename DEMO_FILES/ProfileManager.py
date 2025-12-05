@@ -33,6 +33,7 @@ class ProfileManager:
         filename = f"profile_{profileName}.json"
         return Profile.readFile(filename)
 
+#testing script
 if __name__ == "__main__":
     # Create Profile Manager with 3 profiles
     manager = ProfileManager(["1", "2", "3"])
