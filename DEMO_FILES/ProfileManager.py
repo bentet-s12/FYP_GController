@@ -50,7 +50,7 @@ if __name__ == "__main__":
         Actions("Backward", "s", "Hold"),
         Actions("Left", "a", "Hold"),
         Actions("Right", "d", "Hold"),
-        Actions("Jump", "SPACEBAR", "Click"),
+        Actions("Jump", "space", "Click"),
         Actions("Crouch", "CTRL", "Hold")
     ]
     for a in actions_p2:

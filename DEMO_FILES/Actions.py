@@ -1,4 +1,5 @@
-from pyKey import pressKey, releaseKey, press
+import pydirectinput
+import threading
 import time
 
 class Actions:
@@ -6,29 +7,12 @@ class Actions:
         self._name = name
         self._key_pressed = key_pressed
         self._input_type = input_type
+        
         self.holdvalue = False
         self._is_holding = False
+        self._thread = None
 
-#getters/setters
-        
-    def getName(self):
-        return self._name
-
-    def getKeyPressed(self):
-        return self._key_pressed
-
-    def getInputType(self):
-        return self._input_type
-
-    def setName(self, new_name):
-        self._name = new_name
-
-    def setKeyPressed(self, new_key):
-        self._key_pressed = new_key
-
-    def setInputType(self, new_input_type):
-        self._input_type = new_input_type
-
+    # ----- Serialization -----
     def toDict(self):
         return {
             "name": self._name,
@@ -43,45 +27,73 @@ class Actions:
             key_pressed=d["key_pressed"],
             input_type=d["input_type"]
         )
-#functions
 
-    def compareName(self, name_check) -> bool:
-        return self._name == name_check
+    # ----- Getters -----
+    def getName(self):
+        return self._name
+
+    def getKeyPressed(self):
+        return self._key_pressed
+
+    def getInputType(self):
+        return self._input_type
 
     def setholdvalue(self, newholdvalue):
         self.holdvalue = newholdvalue
+        
+    def compareName(self, name_check):
+        return self._name == name_check
 
+    def setName(self, newName):
+        self._name = newName
+    # ----- HOLD LOOP -----
+    def _hold_loop(self):
+        key = self._key_pressed
+        print(f"[Hold Thread] Started repeating {key}")
+
+        while self.holdvalue:
+            pydirectinput.keyDown(key)
+            time.sleep(0.5)
+
+        pydirectinput.keyUp(key)
+
+        print(f"[Hold Thread] Stopped {key}")
+        self._is_holding = False
+
+    # ----- MAIN ACTION -----
     def useAction(self, ActionName):
-        if not self.compareName(ActionName):
+        if ActionName != self._name:
             return
 
-        # CLICK
+        # --- CLICK ---
         if self._input_type == "Click":
-            press(key=self._key_pressed, sec=0.1)
+            pydirectinput.press(self._key_pressed)
+            self.holdvalue = False
             return
 
-        # HOLD
+        # --- HOLD ---
         if self._input_type == "Hold":
-            while self.holdvalue:
-                pressKey(self._key_pressed)
+            if self.holdvalue and not self._is_holding:
                 self._is_holding = True
-                print(f"Holding {self._key_pressed}")
-                if not self.holdvalue and self._is_holding:
-                    releaseKey(self._key_pressed)
-                    self._is_holding = False
-                    print(f"Released {self._key_pressed}")
+                self._thread = threading.Thread(
+                    target=self._hold_loop,
+                    daemon=True
+                )
+                self._thread.start()
 
+            elif not self.holdvalue and self._is_holding:
+                self._is_holding = False
+                # loop exits by itself
 
-#for testing purposes
 if __name__ == "__main__":
     action1 = Actions("tab", "w", "Hold")
 
     while True:
-        cmd = input("Type 'hold' to hold key, 'release' to release: ").lower()
+        cmd = input("Type 'hold' / 'release': ").lower()
+
         if cmd == "hold":
-           action1.setholdvalue(True)
+            action1.setholdvalue(True)
         elif cmd == "release":
-           action1.setholdvalue(False)
+            action1.setholdvalue(False)
 
         action1.useAction("tab")
-    

@@ -23,7 +23,7 @@
         },
         {
             "name": "Jump",
-            "key_pressed": "SPACEBAR",
+            "key_pressed": "space",
             "input_type": "Click"
         },
         {
