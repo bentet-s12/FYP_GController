@@ -1,0 +1,35 @@
+{
+    "Profile_ID": "2",
+    "Actions": [
+        {
+            "name": "Forward",
+            "key_pressed": "w",
+            "input_type": "Hold"
+        },
+        {
+            "name": "Backward",
+            "key_pressed": "s",
+            "input_type": "Hold"
+        },
+        {
+            "name": "Left",
+            "key_pressed": "a",
+            "input_type": "Hold"
+        },
+        {
+            "name": "Right",
+            "key_pressed": "d",
+            "input_type": "Hold"
+        },
+        {
+            "name": "Jump",
+            "key_pressed": "SPACEBAR",
+            "input_type": "Click"
+        },
+        {
+            "name": "Crouch",
+            "key_pressed": "CTRL",
+            "input_type": "Hold"
+        }
+    ]
+}
