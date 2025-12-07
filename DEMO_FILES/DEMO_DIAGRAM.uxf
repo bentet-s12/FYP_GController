@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<diagram program="umlet" version="15.1">
+  <zoom_level>10</zoom_level>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1140</x>
+      <y>510</y>
+      <w>210</w>
+      <h>200</h>
+    </coordinates>
+    <panel_attributes>Profile
+--
+| - _Profile_ID 
+| - _ActionList
+--
+| + readFile() 
+| + writeFile() 
+| + deleteSelf() 
+| + addAction() 
+| + getAction() 
+| + callfunction() 
+| + getProfileID() 
+| + getActionList()</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>710</x>
+      <y>500</y>
+      <w>210</w>
+      <h>310</h>
+    </coordinates>
+    <panel_attributes>ProfileManager
+--
+| - _profileNames
+--
+| + readFile() 
+| + writeFile() 
+| + addProfile() 
+| + deleteProfile() 
+| + renameProfile() 
+| + loadProfile() 
+| + getProfile() 
+| + getProfileList()|| + readFile() 
+| + writeFile() 
+| + addProfile() 
+| + deleteProfile() 
+| + renameProfile() 
+| + loadProfile() 
+| + getProfile() 
+| + getProfileList()</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>910</x>
+      <y>590</y>
+      <w>250</w>
+      <h>50</h>
+    </coordinates>
+    <panel_attributes>lt=-
+m1=1..1
+m2=0..*
+Manages &gt;</panel_attributes>
+    <additional_attributes>10.0;20.0;230.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>1340</x>
+      <y>620</y>
+      <w>270</w>
+      <h>50</h>
+    </coordinates>
+    <panel_attributes>lt=-
+m1=1..1
+m2=0..*
+Contains &gt;</panel_attributes>
+    <additional_attributes>10.0;20.0;250.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1590</x>
+      <y>470</y>
+      <w>310</w>
+      <h>320</h>
+    </coordinates>
+    <panel_attributes>Actions
+--
+| - _name: str                         
+| - _key_pressed: str                  
+| - _input_type: str                   
+| - holdvalue: bool                    
+| - _is_holding: bool                  
+| - _thread: Thread | None   
+--
+| + Actions(name, key_pressed, input_type) 
+| + toDict(): dict                     
+| + fromDict(d: dict): Actions         
+| + getName(): str                    
+| + getKeyPressed(): str               
+| + getInputType(): str                
+| + setholdvalue(newholdvalue: bool): None 
+| + compareName(name_check: str): bool 
+| + setName(newName: str): None        
+| - _hold_loop(): None                 
+| + useAction(ActionName: str): None </panel_attributes>
+    <additional_attributes/>
+  </element>
+</diagram>
