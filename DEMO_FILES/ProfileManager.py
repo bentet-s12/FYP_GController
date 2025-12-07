@@ -1,4 +1,5 @@
 import json
+import os
 from Profiles import Profile
 from Actions import Actions
 
@@ -10,28 +11,76 @@ class ProfileManager:
     def readFile(filename):
         with open(filename, "r") as f:
             data = json.load(f)
-
-        manager = ProfileManager(data["profileNames"])
-        return manager
+        return ProfileManager(data["profileNames"])
 
     def writeFile(self, filename):
-        data = {
-            "profileNames": self._profileNames
-        }
-
+        data = {"profileNames": self._profileNames}
         with open(filename, "w") as f:
             json.dump(data, f, indent=4)
 
+    def deleteProfile(self, profileName):
+        if profileName in self._profileNames:
+            profile = self.loadProfile(profileName)
+            if profile:
+                profile.deleteSelf()
+            self._profileNames.remove(profileName)
+            self.writeFile("profileManager.json")
+            print(f"[OK] Profile '{profileName}' deleted.")
+        else:
+            print(f"[Warning] Profile '{profileName}' not found!")
+
     def addProfile(self, profileName):
+        if profileName in self._profileNames:
+            print(f"[Warning] Profile '{profileName}' already exists!")
+            return
         self._profileNames.append(profileName)
         self.writeFile("profileManager.json")
+        new_profile = Profile(profileName)
+        new_profile.writeFile(f"profile_{profileName}.json")
+        print(f"[OK] Profile '{profileName}' created.")
 
-    def getProfiles(self):
+    def renameProfile(self, oldName, newName):
+        if oldName not in self._profileNames:
+            print(f"[Error] Profile '{oldName}' does not exist!")
+            return
+        if newName in self._profileNames:
+            print(f"[Error] Profile '{newName}' already exists!")
+            return
+
+        old_filename = f"profile_{oldName}.json"
+        new_filename = f"profile_{newName}.json"
+
+        if not os.path.exists(old_filename):
+            print(f"[Error] File '{old_filename}' does not exist!")
+            return
+
+        profile = self.loadProfile(oldName)
+        profile._Profile_ID = newName
+        profile.writeFile(new_filename)
+        os.remove(old_filename)
+
+        self._profileNames.remove(oldName)
+        self._profileNames.append(newName)
+        self.writeFile("profileManager.json")
+        print(f"[OK] Profile renamed from '{oldName}' to '{newName}'.")
+
+    def getProfileList(self):
         return self._profileNames
 
     def loadProfile(self, profileName):
         filename = f"profile_{profileName}.json"
+        if not os.path.exists(filename):
+            print(f"[Error] File '{filename}' does not exist!")
+            return None
         return Profile.readFile(filename)
+
+    def getProfile(self, profileName):
+        """
+        Returns the Profile object if it exists in manager, otherwise None.
+        """
+        if profileName in self._profileNames:
+            return self.loadProfile(profileName)
+        return None
 
 #testing script
 if __name__ == "__main__":
@@ -55,7 +104,7 @@ if __name__ == "__main__":
     ]
     for a in actions_p2:
         p2.addAction(a)
-    p2.writeFile("profile_2.json")
+    p2.writeFile("profile_2.json")  # Save once after adding all actions
 
     # ----- Profile 3 (2 actions) -----
     p3 = Profile("3")
@@ -65,17 +114,19 @@ if __name__ == "__main__":
     ]
     for a in actions_p3:
         p3.addAction(a)
-        p3.writeFile("profile_3.json")
+    p3.writeFile("profile_3.json")  # Save once
 
-        print("Profiles 1, 2, and 3 created successfully!")
+    print("Profiles 1, 2, and 3 created successfully!\n")
 
-        print("\n--- Loaded Profiles and Their Actions ---")
-    for profile_name in manager.getProfiles():
-        profile = manager.loadProfile(profile_name)
+    # ----- Display all profiles and actions -----
+    print("--- Loaded Profiles and Their Actions ---")
+    for profile_name in manager.getProfileList():
+        profile = manager.getProfile(profile_name)
+        if profile is None:
+            continue
+
         print(f"\nProfile ID: {profile.getProfileID()}")
-
         actions = profile.getActionList()
-
         if not actions:
             print("  (No actions)")
             continue
@@ -83,8 +134,10 @@ if __name__ == "__main__":
         for action in actions:
             print(f"  - {action.getName()} ({action.getKeyPressed()}, {action.getInputType()})")
 
-
-        # ----- CALL "Jump" FROM PROFILE 2 -----
+    # ----- CALL "Jump" FROM PROFILE 2 -----
     print("\n--- Calling 'Jump' from Profile 2 ---")
-    profile2 = manager.loadProfile("2")
-    profile2.callfunction("Jump")
+    profile2 = manager.getProfile("2")
+    if profile2:
+        profile2.callfunction("Jump")
+    else:
+        print("Profile 2 not found!")

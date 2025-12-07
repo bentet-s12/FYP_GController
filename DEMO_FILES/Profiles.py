@@ -1,5 +1,6 @@
 from Actions import Actions
 import json
+import os
 
 class Profile:
     def __init__(self, Profile_ID, ActionList=None):
@@ -28,6 +29,15 @@ class Profile:
         with open(filename, "w") as f:
             json.dump(data, f, indent=4)
 
+    def deleteSelf(self):
+        """Deletes this profile's JSON file."""
+        filename = f"profile_{self._Profile_ID}.json"
+
+        if os.path.exists(filename):
+            os.remove(filename)
+            print(f"[OK] Deleted profile data file: {filename}")
+        else:
+            print(f"[Warning] Profile data file does not exist: {filename}")
             
     def getProfileID(self):
         return self._Profile_ID
