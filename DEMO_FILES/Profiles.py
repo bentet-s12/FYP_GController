@@ -63,6 +63,21 @@ class Profile:
         else:
             print(f"Action '{actionName}' not found in profile.")
 
+    def toDict(self):
+        return {
+            "name": self._name,
+            "key_pressed": self._key_pressed,
+            "input_type": self._input_type
+        }
+
+    @staticmethod
+    def fromDict(data):
+        return Actions(
+            data["name"],
+            data["key_pressed"],
+            data["input_type"]
+        )
+
 if __name__ == "__main__":
     # Create a new profile
     profile = Profile("testprofile")

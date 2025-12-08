@@ -50,12 +50,17 @@ class Actions:
     def _hold_loop(self):
         key = self._key_pressed
         print(f"[Hold Thread] Started repeating {key}")
+        if key in ("left", "right", "middle"):  # mouse hold
+            while self.holdvalue:
+                pydirectinput.mouseDown(button=key)
+                time.sleep(0.05)
+            pydirectinput.mouseUp(button=key)
+        else:
+            while self.holdvalue:
+                pydirectinput.keyDown(key)
+                time.sleep(0.5)
 
-        while self.holdvalue:
-            pydirectinput.keyDown(key)
-            time.sleep(0.5)
-
-        pydirectinput.keyUp(key)
+            pydirectinput.keyUp(key)
 
         print(f"[Hold Thread] Stopped {key}")
         self._is_holding = False
@@ -65,6 +70,10 @@ class Actions:
         if ActionName != self._name:
             return
 
+        if self._key_pressed == "left" && self._input_type == "Click":
+            pydirectinput.click(button="left")
+            return
+        
         # --- CLICK ---
         if self._input_type == "Click":
             pydirectinput.press(self._key_pressed)
@@ -97,3 +106,5 @@ if __name__ == "__main__":
             action1.setholdvalue(False)
 
         action1.useAction("tab")
+
+
