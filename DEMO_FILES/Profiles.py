@@ -62,6 +62,8 @@ class Profile:
             currentAction.useAction(actionName)
         else:
             print(f"Action '{actionName}' not found in profile.")
+            currentAction.useAction(None)
+            return None
 
     def toDict(self):
         return {

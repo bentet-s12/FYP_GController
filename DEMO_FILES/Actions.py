@@ -52,7 +52,7 @@ class Actions:
         print(f"[Hold Thread] Started repeating {key}")
         if key in ("left", "right", "middle"):  # mouse hold
             while self.holdvalue:
-                pydirectinput.mouseDown(button=key)
+                pydirectinput.mouseDown(button=self._key_pressed)
                 time.sleep(0.05)
             pydirectinput.mouseUp(button=key)
         else:
@@ -70,8 +70,8 @@ class Actions:
         if ActionName != self._name:
             return
 
-        if self._key_pressed == "left" && self._input_type == "Click":
-            pydirectinput.click(button="left")
+         if key in ("left", "right", "middle") and self._input_type == "Click":
+            pydirectinput.click(button=self._key_pressed)
             return
         
         # --- CLICK ---
