@@ -64,25 +64,38 @@ class Actions:
 
         print(f"[Hold Thread] Stopped {key}")
         self._is_holding = False
-
+        
+    def stopHold(self):
+        """Force stop any ongoing hold"""
+        self.holdvalue = False
+        if self._is_holding:
+            self._is_holding = False
+        # keyUp to guarantee release
+        if self._key_pressed not in ("left", "right", "middle"):
+            pydirectinput.keyUp(self._key_pressed)
+        else:
+            pydirectinput.mouseUp(button=self._key_pressed)
     # ----- MAIN ACTION -----
     def useAction(self, ActionName):
         if ActionName != self._name:
+            # If this is a different action, stop hold if needed
+            if self._is_holding:
+                self.stopHold()
             return
 
-        if self._key_pressed in ("left", "right", "middle") and self._input_type == "Click":
-            pydirectinput.click(button=self._key_pressed)
-            return
-        
         # --- CLICK ---
         if self._input_type == "Click":
-            pydirectinput.press(self._key_pressed)
-            self.holdvalue = False
+            if self._key_pressed in ("left", "right", "middle"):
+                pydirectinput.click(button=self._key_pressed)
+            else:
+                pydirectinput.press(self._key_pressed)
             return
 
         # --- HOLD ---
         if self._input_type == "Hold":
-            if self.holdvalue and not self._is_holding:
+            # Start hold only if not already holding
+            if not self._is_holding:
+                self.holdvalue = True  # internal only
                 self._is_holding = True
                 self._thread = threading.Thread(
                     target=self._hold_loop,
@@ -90,21 +103,31 @@ class Actions:
                 )
                 self._thread.start()
 
-            elif not self.holdvalue and self._is_holding:
-                self._is_holding = False
-                # loop exits by itself
 
 if __name__ == "__main__":
-    action1 = Actions("tab", "w", "Hold")
+    # --- Create some actions ---
+    action_hold = Actions("MoveForward", "w", "Hold")
+    action_click = Actions("Jump", "space", "Click")
+    action_mouse = Actions("Shoot", "left", "Click")
 
-    while True:
-        cmd = input("Type 'hold' / 'release': ").lower()
+    all_actions = [action_hold, action_click, action_mouse]
 
-        if cmd == "hold":
-            action1.setholdvalue(True)
-        elif cmd == "release":
-            action1.setholdvalue(False)
+    # --- Simulate triggering actions ---
+    print("Starting test. Press Ctrl+C to stop.")
 
-        action1.useAction("tab")
+    try:
+        while True:
+            cmd = input("Type action to trigger (MoveForward / Jump / Shoot / None): ").strip()
 
+            for action in all_actions:
+                action.useAction(cmd)  # automatically handles hold and stop if gesture changes
 
+            # Show internal state for debugging
+            for action in all_actions:
+                print(f"{action.getName()} | is_holding: {action._is_holding}")
+            print("---")
+
+    except KeyboardInterrupt:
+        print("Exiting test, stopping all holds...")
+        for action in all_actions:
+            action.stopHold()
