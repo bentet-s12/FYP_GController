@@ -324,12 +324,30 @@ try:
             active_profile.addAction(Actions("left_click", "left", "Click"))
             active_profile = profile_manager.getProfile(active_profile.getProfileId())  # get current profile
 
+<<<<<<< HEAD
             if active_profile.getAction(smoothed_action) is not None:
                 active_profile.callfunction(smoothed_action)
             else:
                 print("Gesture not mapped to any action in this profile.")
 
             # ---- DEBUG TEXT ----
+=======
+            # get the action object
+            action_obj = active_profile.getAction(smoothed_action)
+
+            if action_obj is not None:
+                # --- set holdvalue based on gesture ---
+                if smoothed_action == "hold":
+                    action_obj.setholdvalue(True)    # start holding
+                else:
+                    action_obj.setholdvalue(False)   # stop holding if it was held
+
+                # trigger the action
+                active_profile.callfunction(smoothed_action)
+            else:
+                print("Gesture not mapped to any action in this profile.")
+                    # ---- DEBUG TEXT ----
+>>>>>>> 94a8dc0833c58e0f8155f73cd5114c9dd4c61305
             debug_text = (
                 f"Pointer: {pointer_debug} | "
                 f"Action: {action_debug} | "
