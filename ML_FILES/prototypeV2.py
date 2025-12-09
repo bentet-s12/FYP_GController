@@ -429,8 +429,15 @@ class GestureControllerApp:
                     # It should match an Actions.getName() inside the active profile.
                     if smoothed_action != "none":
                         action_obj = self.active_profile.getAction(smoothed_action)
+
                         if action_obj is not None:
-                            self.active_profile.callfunction(smoothed_action)
+                            # --- STOP holds for all other actions in the profile ---
+                            for a in self.active_profile.getActionList():
+                                if a != action_obj and a.getInputType() == "Hold":
+                                    a.stopHold()
+
+                            # --- USE the current action ---
+                            action_obj.useAction(smoothed_action)
                         else:
                             # Optional debug:
                             # print(f"[PROFILE] No action mapped for gesture '{smoothed_action}' in profile {self.active_profile.getProfileID()}")
