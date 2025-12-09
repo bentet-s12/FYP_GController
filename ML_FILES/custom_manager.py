@@ -5,7 +5,9 @@ import subprocess
 import platform
 import numpy as np
 import mediapipe as mp
-import json
+
+from ProfileManager import ProfileManager
+from Actions import Actions
 
 
 # ===================== PATH CONFIG =====================
@@ -31,107 +33,6 @@ class PathConfig:
         # Ensure dirs exist
         os.makedirs(self.LANDMARK_DIR, exist_ok=True)
         os.makedirs(self.CUSTOM_DIR, exist_ok=True)
-
-
-# ===================== PROFILE JSON MANAGER =====================
-
-class ProfileJSONManager:
-    """
-    Minimal JSON-based manager for profile_<id>.json and profileManager.json.
-    Used here to register / update gesture mappings:
-
-      {
-        "Profile_ID": "1",
-        "Actions": [
-          {"name": "Forward", "key_pressed": "w", "input_type": "Hold"},
-          ...
-        ]
-      }
-    """
-
-    def __init__(self, base_dir: str, profile_id: str):
-        self.base_dir = base_dir
-        self.profile_id = str(profile_id)
-        self.pm_path = os.path.join(base_dir, "profileManager.json")
-        self.profile_path = os.path.join(base_dir, f"profile_{self.profile_id}.json")
-        self._ensure_files_exist()
-
-    # ----- helpers -----
-
-    def _ensure_files_exist(self):
-        # Ensure profileManager.json exists and includes this profile ID
-        if os.path.exists(self.pm_path):
-            with open(self.pm_path, "r") as f:
-                data = json.load(f)
-            names = data.get("profileNames", [])
-            if self.profile_id not in names:
-                names.append(self.profile_id)
-                data["profileNames"] = names
-                with open(self.pm_path, "w") as f:
-                    json.dump(data, f, indent=4)
-        else:
-            data = {"profileNames": [self.profile_id]}
-            with open(self.pm_path, "w") as f:
-                json.dump(data, f, indent=4)
-
-        # Ensure profile_<id>.json exists
-        if os.path.exists(self.profile_path):
-            return
-        profile_data = {
-            "Profile_ID": self.profile_id,
-            "Actions": []
-        }
-        with open(self.profile_path, "w") as f:
-            json.dump(profile_data, f, indent=4)
-
-    def _load_profile(self):
-        with open(self.profile_path, "r") as f:
-            return json.load(f)
-
-    def _save_profile(self, data):
-        with open(self.profile_path, "w") as f:
-            json.dump(data, f, indent=4)
-
-    # ----- public API -----
-
-    def upsert_action(self, gesture_name: str, key_pressed: str, input_type: str):
-        """
-        Add or update an action by gesture name.
-        """
-        data = self._load_profile()
-        actions = data.get("Actions", [])
-
-        for act in actions:
-            if act.get("name") == gesture_name:
-                act["key_pressed"] = key_pressed
-                act["input_type"] = input_type
-                break
-        else:
-            actions.append({
-                "name": gesture_name,
-                "key_pressed": key_pressed,
-                "input_type": input_type
-            })
-
-        data["Actions"] = actions
-        self._save_profile(data)
-        print(f"[PROFILE] Saved/updated action '{gesture_name}' in {os.path.basename(self.profile_path)}")
-
-    def delete_action(self, gesture_name: str):
-        """
-        Remove an action entry by gesture name (if present).
-        """
-        data = self._load_profile()
-        actions = data.get("Actions", [])
-        new_actions = [a for a in actions if a.get("name") != gesture_name]
-
-        if len(new_actions) == len(actions):
-            print(f"[PROFILE] No action named '{gesture_name}' found in {os.path.basename(self.profile_path)}")
-            return
-
-        data["Actions"] = new_actions
-        self._save_profile(data)
-        print(f"[PROFILE] Action '{gesture_name}' removed from {os.path.basename(self.profile_path)}")
 
 
 # ===================== DATASET MANAGER =====================
@@ -227,15 +128,15 @@ class CombinedDatasetManager:
         """
         X_old, y_old, class_names = self.load_landmark_dataset()
         if X_old is None:
-            return False
+            return
 
         if gesture_name in class_names:
             print(f"[ERROR] Gesture '{gesture_name}' already exists. Use EDIT instead.")
-            return False
+            return
 
         X_new = self._load_custom_vectors(gesture_name)
         if X_new is None:
-            return False
+            return
 
         # new label is next index
         new_label = len(class_names)
@@ -249,24 +150,23 @@ class CombinedDatasetManager:
         # clean scratch
         self._delete_custom_folder(gesture_name)
         print(f"[DONE] Added new gesture '{gesture_name}' with label {new_label}.")
-        return True
 
     # -------- DELETE GESTURE --------
 
-    def delete_gesture_from_landmarks(self, gesture_name: str, delete_custom=True):
+    def delete_gesture_from_landmarks(self, gesture_name: str):
         """
         Remove all samples of a given gesture (class) from the landmark dataset.
         Re-index remaining class labels and save back.
         """
         X, y, class_names = self.load_landmark_dataset()
         if X is None:
-            return False
+            return
 
         print("\n[INFO] Current classes:", class_names)
 
         if gesture_name not in class_names:
             print(f"[ERROR] Gesture '{gesture_name}' not found in classes.")
-            return False
+            return
 
         idx_to_remove = int(np.where(class_names == gesture_name)[0][0])
         print(f"[INFO] Deleting gesture '{gesture_name}' with class index {idx_to_remove}")
@@ -290,12 +190,10 @@ class CombinedDatasetManager:
         print("[INFO] Label remap (old -> new):", old_to_new)
 
         self.save_landmark_dataset(X_new, y_new, class_names_new)
-
-        if delete_custom:
-            self._delete_custom_folder(gesture_name)
+        # Also remove custom scratch folder if exists
+        self._delete_custom_folder(gesture_name)
 
         print(f"\n[DONE] Gesture '{gesture_name}' removed from landmark dataset.")
-        return True
 
     def delete_gesture_with_warning(self, gesture_name: str):
         """
@@ -308,9 +206,9 @@ class CombinedDatasetManager:
 
         if confirm != "YES":
             print("Deletion cancelled.")
-            return False
+            return
 
-        return self.delete_gesture_from_landmarks(gesture_name, delete_custom=True)
+        self.delete_gesture_from_landmarks(gesture_name)
 
     # -------- EDIT GESTURE (REPLACE) --------
 
@@ -319,16 +217,16 @@ class CombinedDatasetManager:
         Replace an existing gesture with newly recorded samples:
           1) Confirm dangerous operation
           2) Record new vectors via collector -> dataCustom/<gesture_name>
-          3) Delete old samples from landmark dataset (without deleting scratch)
+          3) Delete old samples from landmark dataset
           4) Append new vectors as a fresh class (same name)
         """
         X, y, class_names = self.load_landmark_dataset()
         if X is None:
-            return False
+            return
 
         if gesture_name not in class_names:
             print(f"[ERROR] Gesture '{gesture_name}' does not exist in the dataset.")
-            return False
+            return
 
         print(f"\n=== EDIT GESTURE: {gesture_name} ===")
         print("You are about to REPLACE all existing samples for this gesture.")
@@ -337,29 +235,27 @@ class CombinedDatasetManager:
 
         if confirm != "YES":
             print("Edit cancelled.")
-            return False
+            return
 
-        # 1) Collect new samples
+        # 1) Collect new samples (this fills dataCustom/<gesture_name> with npy vectors)
         print("\n[STEP 1] Collecting NEW samples for gesture:", gesture_name)
         collector.collect_gesture(gesture_name)
 
-        # 2) Delete old samples, but KEEP scratch folder
+        # 2) Delete old samples for this gesture
         print("\n[STEP 2] Removing OLD gesture data from landmark dataset...")
-        ok = self.delete_gesture_from_landmarks(gesture_name, delete_custom=False)
-        if not ok:
-            return False
+        self.delete_gesture_from_landmarks(gesture_name)
 
         # 3) Add new gesture vectors (just created) into dataset
         print("\n[STEP 3] Adding NEW gesture samples into landmark dataset...")
         X_new = self._load_custom_vectors(gesture_name)
         if X_new is None:
             print("[ERROR] No new vectors found for gesture after edit. Aborting.")
-            return False
+            return
 
         X_old2, y_old2, class_names2 = self.load_landmark_dataset()
         if X_old2 is None:
             print("[ERROR] Could not reload landmark dataset after deletion.")
-            return False
+            return
 
         new_label = len(class_names2)
         y_new = np.full(X_new.shape[0], new_label, dtype=np.int64)
@@ -373,7 +269,6 @@ class CombinedDatasetManager:
         self._delete_custom_folder(gesture_name)
 
         print(f"\n[DONE] Gesture '{gesture_name}' has been REPLACED with new samples.")
-        return True
 
 
 # ===================== CUSTOM GESTURE COLLECTOR (WEBCAM) =====================
@@ -578,59 +473,142 @@ class CustomGestureCollector:
         self.open_folder(gesture_folder)
 
 
+# ===================== PROFILE MANAGER HELPER =====================
+
+def load_profile_manager():
+    """
+    Load ProfileManager from profileManager.json if it exists,
+    otherwise create an empty one (no profiles yet).
+    """
+    if os.path.exists("profileManager.json"):
+        return ProfileManager.readFile("profileManager.json")
+    else:
+        pm = ProfileManager([])
+        pm.writeFile("profileManager.json")
+        return pm
+
+
 # ===================== TEXT MENU / ENTRY POINT =====================
 
 def main():
     paths = PathConfig()
-
-    # Ask which profile number to use
-    profile_id = input("Enter profile number to use (e.g. 1): ").strip()
-    if not profile_id:
-        profile_id = "1"
-    profile_mgr = ProfileJSONManager(paths.BASE_DIR, profile_id)
-
     manager = CombinedDatasetManager(paths)
     collector = CustomGestureCollector(paths, dataset_size=200)
+    profile_manager = load_profile_manager()
 
     while True:
         print("\n===== Custom Gesture Manager =====")
         print("1) Create NEW gesture")
         print("2) EDIT existing gesture (replace samples)")
-        print("3) DELETE gesture")
+        print("3) DELETE gesture from dataset")
         print("4) Exit")
         choice = input("Select an option (1-4): ").strip()
 
         if choice == "1":
-            gesture_name = input("Enter NEW gesture name (e.g. Forward, Jump): ").strip()
-            if gesture_name:
-                key_pressed = input("Enter key to trigger (e.g. w, space, ctrl): ").strip()
-                input_type = input("Enter input type (Click/Hold): ").strip()
-
-                collector.collect_gesture(gesture_name)
-                ok = manager.add_new_gesture(gesture_name)
-                if ok:
-                    profile_mgr.upsert_action(gesture_name, key_pressed, input_type)
-            else:
+            # --- CREATE NEW GESTURE ---
+            gesture_name = input("Enter NEW gesture name (classifier label, e.g. w, jump): ").strip()
+            if not gesture_name:
                 print("No gesture name entered.")
+                continue
+
+            key = input("Enter key to press (e.g. w, space, ctrl): ").strip()
+            if not key:
+                print("No key entered.")
+                continue
+
+            # normalize input type (click/hold, any case → Click/Hold)
+            raw_input_type = input("Enter input type (click / hold): ").strip().lower()
+            if raw_input_type not in ("click", "hold"):
+                print("Invalid input type. Must be 'click' or 'hold'.")
+                continue
+            input_type = raw_input_type.capitalize()  # "Click" or "Hold"
+
+            profile_id = input("Enter profile ID to attach this gesture to (e.g. 1, 2, 3): ").strip()
+            if not profile_id:
+                print("No profile ID entered.")
+                continue
+
+            profile = profile_manager.getProfile(profile_id)
+            if profile is None:
+                print(f"[ERROR] Profile '{profile_id}' not found in ProfileManager.")
+                print("Create the profile first using your profile setup tools.")
+                continue
+
+            print("\nYou are about to create a NEW gesture with:")
+            print(f"  Gesture name : {gesture_name}")
+            print(f"  Key pressed  : {key}")
+            print(f"  Input type   : {input_type}")
+            print(f"  Profile ID   : {profile_id}")
+            confirm = input("Type 'YES' to start recording and add this gesture: ").strip()
+
+            if confirm != "YES":
+                print("Creation cancelled.")
+                continue
+
+            # 1) Record landmark vectors into dataCustom/<gesture_name>
+            collector.collect_gesture(gesture_name)
+            # 2) Append to landmarkVectors
+            manager.add_new_gesture(gesture_name)
+            # 3) Add action into profile_<profile_id>.json
+            profile.addAction(Actions(gesture_name, key, input_type))
+            profile.writeFile(f"profile_{profile_id}.json")
+
+            print(f"[OK] Gesture '{gesture_name}' created and added to profile_{profile_id}.json")
 
         elif choice == "2":
-            gesture_name = input("Enter gesture name to EDIT (existing, e.g. Forward): ").strip()
-            if gesture_name:
-                key_pressed = input("Enter NEW key to trigger (e.g. w, space, ctrl): ").strip()
-                input_type = input("Enter NEW input type (Click/Hold): ").strip()
-
-                ok = manager.edit_gesture(gesture_name, collector)
-                if ok:
-                    profile_mgr.upsert_action(gesture_name, key_pressed, input_type)
-            else:
+            # --- EDIT EXISTING GESTURE ---
+            gesture_name = input("Enter gesture name to EDIT (existing classifier label): ").strip()
+            if not gesture_name:
                 print("No gesture name entered.")
+                continue
+
+            key = input("Enter NEW key to press (e.g. w, space, ctrl): ").strip()
+            if not key:
+                print("No key entered.")
+                continue
+
+            raw_input_type = input("Enter NEW input type (click / hold): ").strip().lower()
+            if raw_input_type not in ("click", "hold"):
+                print("Invalid input type. Must be 'click' or 'hold'.")
+                continue
+            input_type = raw_input_type.capitalize()
+
+            profile_id = input("Enter profile ID where this gesture is used (e.g. 1, 2, 3): ").strip()
+            if not profile_id:
+                print("No profile ID entered.")
+                continue
+
+            profile = profile_manager.getProfile(profile_id)
+            if profile is None:
+                print(f"[ERROR] Profile '{profile_id}' not found in ProfileManager.")
+                continue
+
+            print("\nYou are about to EDIT an existing gesture:")
+            print(f"  Gesture name : {gesture_name}")
+            print(f"  New key      : {key}")
+            print(f"  New input    : {input_type}")
+            print(f"  Profile ID   : {profile_id}")
+            confirm = input("Type 'YES' to proceed with editing (record new data): ").strip()
+
+            if confirm != "YES":
+                print("Edit cancelled.")
+                continue
+
+            # Dataset-level edit (record new vectors + replace in landmarkVectors)
+            manager.edit_gesture(gesture_name, collector)
+
+            # Update profile mapping (add new action entry; you can customise to replace old ones)
+            profile.addAction(Actions(gesture_name, key, input_type))
+            profile.writeFile(f"profile_{profile_id}.json")
+
+            print(f"[OK] Gesture '{gesture_name}' updated and saved to profile_{profile_id}.json")
 
         elif choice == "3":
-            gesture_name = input("Enter gesture name to DELETE: ").strip()
+            # --- DELETE GESTURE (ONLY FROM DATASET) ---
+            gesture_name = input("Enter gesture name to DELETE from dataset: ").strip()
             if gesture_name:
-                ok = manager.delete_gesture_with_warning(gesture_name)
-                if ok:
-                    profile_mgr.delete_action(gesture_name)
+                manager.delete_gesture_with_warning(gesture_name)
+                # You can also add logic here to remove it from profiles if desired.
             else:
                 print("No gesture name entered.")
 
