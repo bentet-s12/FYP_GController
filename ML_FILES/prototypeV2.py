@@ -359,49 +359,38 @@ class GestureControllerApp:
                     # Move mouse with pointer hand
                     # Only proceed if pointer_hand exists and has tip_px
                     if pointer_hand is not None and pointer_hand.get("tip_px") is not None:
-                        # initialize previous screen position if not exists
-                        if not hasattr(self, "prev_x"):
-                            self.prev_x = int(pointer_hand["tip_norm"][0] * self.screen_w)
-                            self.prev_y = int(pointer_hand["tip_norm"][1] * self.screen_h)
-
-                        fx, fy = pointer_hand["tip_px"]
                         nx, ny = pointer_hand["tip_norm"]
 
-                        # draw fingertip for pointer hand
-                        cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
-
-                        # convert normalized coordinates to screen space
-                        sx = int(nx * self.screen_w)
-                        sy = int(ny * self.screen_h)
+                        # initialize previous normalized position if not exists
+                        if not hasattr(self, "prev_nx"):
+                            self.prev_nx, self.prev_ny = nx, ny
 
                         # calculate delta
-                        sensitivity = 1  # tweak this to your liking
+                        dx = nx - self.prev_nx
+                        dy = ny - self.prev_ny
 
-                        # calculate delta in screen space
-                        dx = sx - self.prev_x
-                        dy = sy - self.prev_y
+                        # deadzone threshold to ignore micro movements
+                        deadzone = 0.01  # adjust between 0.002-0.005
+                        if abs(dx) < deadzone: dx = 0
+                        if abs(dy) < deadzone: dy = 0
 
-                        # scale for Minecraft
+                        # sensitivity scale
+                        sensitivity = 200
                         dx_scaled = int(dx * sensitivity)
                         dy_scaled = int(dy * sensitivity)
 
                         # move mouse relatively (invert Y)
-                        pydirectinput.moveRel(dx_scaled, dy_scaled, duration=0)
+                        if dx_scaled != 0 or dy_scaled != 0:
+                            pydirectinput.moveRel(dx_scaled, dy_scaled, duration=1)
 
                         # update previous position
-                        self.prev_x = sx
-                        self.prev_y = sy
+                        self.prev_nx = nx
+                        self.prev_ny = ny
 
-
-                        # optional debug string
-                        pointer_debug = (
-                            f"{pointer_hand['mp_label']} "
-                            f"({pointer_hand['raw_label']}, {pointer_hand['raw_conf']:.2f})"
-                        )
+                        # debug
+                        pointer_debug = f"{pointer_hand['mp_label']} ({pointer_hand['raw_label']}, {pointer_hand['raw_conf']:.2f})"
                     else:
-                        # No hand detected → do nothing
                         pointer_debug = "None"
-                        
 
                     # ----- Action hand selection (must be different from pointer if 2 hands) -----
                     action_hand = None
@@ -504,7 +493,7 @@ class GestureControllerApp:
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         break
 
-                    time.sleep(0.01)
+                    time.sleep(0.0001)
 
         finally:
             self._cleanup()
