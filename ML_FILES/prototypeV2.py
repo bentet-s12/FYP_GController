@@ -357,22 +357,51 @@ class GestureControllerApp:
                             pointer_hand = hands_info[0]
 
                     # Move mouse with pointer hand
-                    pointer_debug = "None"
-                    if pointer_hand is not None:
+                    # Only proceed if pointer_hand exists and has tip_px
+                    if pointer_hand is not None and pointer_hand.get("tip_px") is not None:
+                        # initialize previous screen position if not exists
+                        if not hasattr(self, "prev_x"):
+                            self.prev_x = int(pointer_hand["tip_norm"][0] * self.screen_w)
+                            self.prev_y = int(pointer_hand["tip_norm"][1] * self.screen_h)
+
                         fx, fy = pointer_hand["tip_px"]
                         nx, ny = pointer_hand["tip_norm"]
 
                         # draw fingertip for pointer hand
                         cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
 
+                        # convert normalized coordinates to screen space
                         sx = int(nx * self.screen_w)
                         sy = int(ny * self.screen_h)
-                        pydirectinput.moveTo(sx, sy, duration = 0)
 
+                        # calculate delta
+                        sensitivity = 1  # tweak this to your liking
+
+                        # calculate delta in screen space
+                        dx = sx - self.prev_x
+                        dy = sy - self.prev_y
+
+                        # scale for Minecraft
+                        dx_scaled = int(dx * sensitivity)
+                        dy_scaled = int(dy * sensitivity)
+
+                        # move mouse relatively (invert Y)
+                        pydirectinput.moveRel(dx_scaled, dy_scaled, duration=0)
+
+                        # update previous position
+                        self.prev_x = sx
+                        self.prev_y = sy
+
+
+                        # optional debug string
                         pointer_debug = (
                             f"{pointer_hand['mp_label']} "
                             f"({pointer_hand['raw_label']}, {pointer_hand['raw_conf']:.2f})"
                         )
+                    else:
+                        # No hand detected → do nothing
+                        pointer_debug = "None"
+                        
 
                     # ----- Action hand selection (must be different from pointer if 2 hands) -----
                     action_hand = None
