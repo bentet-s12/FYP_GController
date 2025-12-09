@@ -6,6 +6,7 @@ import pyautogui
 import tkinter as tk
 from sklearn.neighbors import KNeighborsClassifier
 import mediapipe as mp
+import pydirectinput
 
 from ProfileManager import ProfileManager
 from Profiles import Profile
@@ -309,6 +310,7 @@ class GestureControllerApp:
 
     def run(self):
         try:
+            isActioning = 0
             with self.mp_hands.Hands(
                 static_image_mode=False,
                 max_num_hands=2,
@@ -365,7 +367,7 @@ class GestureControllerApp:
 
                         sx = int(nx * self.screen_w)
                         sy = int(ny * self.screen_h)
-                        pyautogui.moveTo(sx, sy, duration=0)
+                        pydirectinput.moveTo(sx, sy, duration = 0)
 
                         pointer_debug = (
                             f"{pointer_hand['mp_label']} "
@@ -427,9 +429,10 @@ class GestureControllerApp:
                     # ===== ProfileManager CALL =====
                     # smoothed_action is the gesture name we pass to the profile.
                     # It should match an Actions.getName() inside the active profile.
+                     
                     if smoothed_action != "none":
                         action_obj = self.active_profile.getAction(smoothed_action)
-
+                        isActioning = 1
                         if action_obj is not None:
                             # --- STOP holds for all other actions in the profile ---
                             for a in self.active_profile.getActionList():
@@ -442,6 +445,11 @@ class GestureControllerApp:
                             # Optional debug:
                             # print(f"[PROFILE] No action mapped for gesture '{smoothed_action}' in profile {self.active_profile.getProfileID()}")
                             pass
+                    else:
+                        if isActioning == 1:
+                            for a in self.active_profile.getActionList():
+                                    a.stopHold()
+                            isActioning = 0
 
                     # Update GUI with last gesture
                     self.gui.set_last_gesture(smoothed_action)
