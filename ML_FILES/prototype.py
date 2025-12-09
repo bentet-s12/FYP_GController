@@ -6,7 +6,7 @@ from sklearn.neighbors import KNeighborsClassifier
 import pyautogui
 import tkinter as tk
 import mediapipe as mp
-
+import ProfileManager as profile_manager
 # ========= CONFIG =========
 
 # Folder containing landmark-based X.npy, y.npy, class_names.npy
@@ -318,19 +318,16 @@ try:
 
             # ========= COMMANDS FROM ACTION HAND =========
             # left_click: single click on transition into left_click
-            if smoothed_action == "left_click" and prev_action != "left_click":
-                pyautogui.click(button="left")  # click + release immediately
+            active_profile = Profile("active")
+            active_profile.addAction(Actions("none", "space", "Click"))
+            active_profile.addAction(Actions("hold", "w", "Hold"))
+            active_profile.addAction(Actions("left_click", "left", "Click"))
+            active_profile = profile_manager.getProfile(active_profile.getProfileId())  # get current profile
 
-            # hold: keep left mouse down while gesture is present
-            if smoothed_action == "hold":
-                if not is_holding:
-                    pyautogui.mouseDown(button="left")
-                    is_holding = True
+            if active_profile.getAction(smoothed_action) is not None:
+                active_profile.callfunction(smoothed_action)
             else:
-                # if current logical gesture is not hold, ensure mouse is up
-                if is_holding:
-                    pyautogui.mouseUp(button="left")
-                    is_holding = False
+                print("Gesture not mapped to any action in this profile.")
 
             # ---- DEBUG TEXT ----
             debug_text = (
