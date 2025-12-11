@@ -46,6 +46,12 @@ class Actions:
 
     def setName(self, newName):
         self._name = newName
+
+    def SetKey(self,newKey):
+        self._key_pressed = newKey
+
+    def SetDuration(self,newDuration):
+        self._input_type = newDuration
     # ----- HOLD LOOP -----
     def _hold_loop(self):
         key = self._key_pressed

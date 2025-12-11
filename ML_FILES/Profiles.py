@@ -64,6 +64,15 @@ class Profile:
             print(f"Action '{actionName}' not found in profile.")
             return None
 
+    def editAction(self, actionName, newkey):
+        action = getAction(actionName)
+        action.SetKey(newKey)
+        return True
+
+    def editDuration(self, actionName, duration):
+        action = getAction(actionName)
+        action.SetDuration(duration)
+        return True
 
 if __name__ == "__main__":
     # Create a new profile
