@@ -76,6 +76,8 @@ class Actions:
         self.holdvalue = False
         if self._is_holding:
             self._is_holding = False
+        if not self._key_pressed:
+            return
         # keyUp to guarantee release
         if self._key_pressed not in ("left", "right", "middle"):
             pydirectinput.keyUp(self._key_pressed)
