@@ -7,7 +7,6 @@ import tkinter as tk
 from sklearn.neighbors import KNeighborsClassifier
 import mediapipe as mp
 import pydirectinput
-import mouse
 
 from ProfileManager import ProfileManager
 from Profiles import Profile
@@ -310,8 +309,11 @@ class GestureControllerApp:
     # ---------- MAIN LOOP ----------
 
     def run(self):
+        # Track previous gesture & action for transition logic
+        prev_smoothed_action = "none"
+        prev_hold_action = None  # Actions object currently holding, if any
+
         try:
-            isActioning = 0
             with self.mp_hands.Hands(
                 static_image_mode=False,
                 max_num_hands=2,
@@ -358,52 +360,22 @@ class GestureControllerApp:
                             pointer_hand = hands_info[0]
 
                     # Move mouse with pointer hand
-                    # Only proceed if pointer_hand exists and has tip_px
-                    if pointer_hand is not None and pointer_hand.get("tip_px") is not None:
-                        # initialize previous screen position if not exists
-                        if not hasattr(self, "prev_x"):
-                            self.prev_x = int(pointer_hand["tip_norm"][0] * self.screen_w)
-                            self.prev_y = int(pointer_hand["tip_norm"][1] * self.screen_h)
-
+                    pointer_debug = "None"
+                    if pointer_hand is not None:
                         fx, fy = pointer_hand["tip_px"]
                         nx, ny = pointer_hand["tip_norm"]
 
                         # draw fingertip for pointer hand
                         cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
 
-                        # convert normalized coordinates to screen space
                         sx = int(nx * self.screen_w)
                         sy = int(ny * self.screen_h)
+                        pyautogui.moveTo(sx, sy, duration=0)
 
-                        # calculate delta
-                        sensitivity = 1  # tweak this to your liking
-
-                        # calculate delta in screen space
-                        dx = sx - self.prev_x
-                        dy = sy - self.prev_y
-
-                        # scale for Minecraft
-                        dx_scaled = int(dx * sensitivity)
-                        dy_scaled = int(dy * sensitivity)
-
-                        # move mouse relatively (invert Y)
-                        #pydirectinput.moveRel(dx_scaled, dy_scaled, duration=0)
-                        mouse.move(dx_scaled, dy_scaled, absolute=False)
-
-                        # update previous position
-                        self.prev_x = sx
-                        self.prev_y = sy
-
-
-                        # optional debug string
                         pointer_debug = (
                             f"{pointer_hand['mp_label']} "
                             f"({pointer_hand['raw_label']}, {pointer_hand['raw_conf']:.2f})"
                         )
-                    else:
-                        # No hand detected → do nothing
-                        pointer_debug = "None"
-                        
 
                     # ----- Action hand selection (must be different from pointer if 2 hands) -----
                     action_hand = None
@@ -444,12 +416,11 @@ class GestureControllerApp:
                         action_conf = 0.0
 
                     # ----- Smooth gesture name over last N frames -----
-                    # We smooth **gesture names** directly (e.g. "left_click", "hold", "w", "Jump")
                     self.last_action_predictions.append(action_label)
                     if len(self.last_action_predictions) > SMOOTH_WINDOW:
                         self.last_action_predictions.pop(0)
 
-                    # Majority vote
+                    # Majority vote on gesture names
                     counts = {}
                     for g in self.last_action_predictions:
                         counts[g] = counts.get(g, 0) + 1
@@ -457,25 +428,65 @@ class GestureControllerApp:
                     smoothed_action = max(counts, key=counts.get)
                     self.last_smoothed_action = smoothed_action
 
-                    # ===== ProfileManager CALL =====
-                    # smoothed_action is the gesture name we pass to the profile.
-                    # It should match an Actions.getName() inside the active profile.
-                     
-                    if smoothed_action != "none":
-                        action_obj = self.active_profile.getAction(smoothed_action)
-                        isActioning = 1
-                        if action_obj is not None:
-                            # --- STOP holds for all other actions in the profile ---
-                            for a in self.active_profile.getActionList():
-                                if a != action_obj and a.getInputType() == "Hold":
-                                    a.stopHold()
+                    # ===== Map smoothed gesture -> Actions object =====
+                    print(f"[GESTURE] Smoothed gesture: '{smoothed_action}'")
 
-                            # --- USE the current action ---
-                            action_obj.useAction(smoothed_action)
-                        else:
-                            # Optional debug:
-                            # print(f"[PROFILE] No action mapped for gesture '{smoothed_action}' in profile {self.active_profile.getProfileID()}")
-                            pass
+                    mapped_action_obj = None
+
+                    if smoothed_action != "none":
+                        # 1) look through all actions in the active profile
+                        try:
+                            actions_list = self.active_profile.getActionList()
+                        except AttributeError:
+                            actions_list = []
+
+                        for a in actions_list:
+                            try:
+                                name = a.getName()
+                                key = a.getKeyPressed()
+                            except AttributeError:
+                                continue
+
+                            if name == smoothed_action or key == smoothed_action:
+                                mapped_action_obj = a
+                                break
+
+                        # 2) fallback: getAction by name
+                        if mapped_action_obj is None:
+                            try:
+                                direct_action = self.active_profile.getAction(smoothed_action)
+                                if direct_action is not None:
+                                    mapped_action_obj = direct_action
+                            except AttributeError:
+                                pass
+
+                    # ===== Handle transition logic: Click vs Hold =====
+                    # If we had a previous hold action and gesture changed away, stop it
+                    if prev_hold_action is not None:
+                        if smoothed_action != prev_hold_action.getName():
+                            # gesture changed or disappeared -> stop hold
+                            prev_hold_action.stopHold()
+                            prev_hold_action = None
+
+                    # Now handle the *current* gesture
+                    if smoothed_action != "none" and mapped_action_obj is not None:
+                        input_type = mapped_action_obj.getInputType()
+
+                        # CLICK -> only on transition (prev != current)
+                        if input_type == "Click":
+                            if smoothed_action != prev_smoothed_action:
+                                print(f"[ACTION] Single click for '{smoothed_action}'")
+                                mapped_action_obj.useAction(mapped_action_obj.getName())
+
+                        # HOLD -> call every frame; Actions takes care of starting thread once
+                        elif input_type == "Hold":
+                            mapped_action_obj.useAction(mapped_action_obj.getName())
+                            prev_hold_action = mapped_action_obj
+
+                        # Anything else (e.g. default with None) -> do nothing
+                    else:
+                        # No valid mapped action; any previous hold is already handled above
+                        pass
 
                     # Update GUI with last gesture
                     self.gui.set_last_gesture(smoothed_action)
@@ -500,6 +511,9 @@ class GestureControllerApp:
 
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         break
+
+                    # update previous for next loop
+                    prev_smoothed_action = smoothed_action
 
                     time.sleep(0.01)
 
