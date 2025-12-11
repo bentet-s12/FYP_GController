@@ -475,11 +475,6 @@ class GestureControllerApp:
                             # Optional debug:
                             # print(f"[PROFILE] No action mapped for gesture '{smoothed_action}' in profile {self.active_profile.getProfileID()}")
                             pass
-                    else:
-                        if isActioning == 1:
-                            for a in self.active_profile.getActionList():
-                                    a.stopHold()
-                            isActioning = 0
 
                     # Update GUI with last gesture
                     self.gui.set_last_gesture(smoothed_action)
