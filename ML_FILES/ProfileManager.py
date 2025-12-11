@@ -32,12 +32,17 @@ class ProfileManager:
     def addProfile(self, profileName):
         if profileName in self._profileNames:
             print(f"[Warning] Profile '{profileName}' already exists!")
-            return
-        self._profileNames.append(profileName)
-        self.writeFile("profileManager.json")
-        new_profile = Profile(profileName)
-        new_profile.writeFile(f"profile_{profileName}.json")
-        print(f"[OK] Profile '{profileName}' created.")
+            return False
+        if len(self._profileNames) < 4:
+            self._profileNames.append(profileName)
+            self.writeFile("profileManager.json")
+            new_profile = Profile(profileName)
+            new_profile.writeFile(f"profile_{profileName}.json")
+            print(f"[OK] Profile '{profileName}' created.")
+            return True
+        else:
+            return False
+        
 
     def renameProfile(self, oldName, newName):
         if oldName not in self._profileNames:
