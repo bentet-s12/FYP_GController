@@ -7,6 +7,7 @@ import tkinter as tk
 from sklearn.neighbors import KNeighborsClassifier
 import mediapipe as mp
 import pydirectinput
+import mouse
 
 from ProfileManager import ProfileManager
 from Profiles import Profile
@@ -375,7 +376,7 @@ class GestureControllerApp:
                         sy = int(ny * self.screen_h)
 
                         # calculate delta
-                        sensitivity = 0.6  # tweak this to your liking
+                        sensitivity = 1  # tweak this to your liking
 
                         # calculate delta in screen space
                         dx = sx - self.prev_x
@@ -385,9 +386,9 @@ class GestureControllerApp:
                         dx_scaled = int(dx * sensitivity)
                         dy_scaled = int(dy * sensitivity)
 
-                        # move mouse relatively
-                        
-                        pydirectinput.moveRel(dx_scaled, dy_scaled, duration=0)
+                        # move mouse relatively (invert Y)
+                        #pydirectinput.moveRel(dx_scaled, dy_scaled, duration=0)
+                        mouse.move(dx_scaled, dy_scaled, absolute=False)
 
                         # update previous position
                         self.prev_x = sx
@@ -505,7 +506,7 @@ class GestureControllerApp:
                     if cv2.waitKey(1) & 0xFF == ord("q"):
                         break
 
-                    #time.sleep(0.01)
+                    time.sleep(0.01)
 
         finally:
             self._cleanup()
