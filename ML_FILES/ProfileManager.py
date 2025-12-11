@@ -26,8 +26,10 @@ class ProfileManager:
             self._profileNames.remove(profileName)
             self.writeFile("profileManager.json")
             print(f"[OK] Profile '{profileName}' deleted.")
+            return True
         else:
             print(f"[Warning] Profile '{profileName}' not found!")
+            return False
 
     def addProfile(self, profileName):
         if profileName in self._profileNames:
@@ -47,10 +49,10 @@ class ProfileManager:
     def renameProfile(self, oldName, newName):
         if oldName not in self._profileNames:
             print(f"[Error] Profile '{oldName}' does not exist!")
-            return
+            return True
         if newName in self._profileNames:
             print(f"[Error] Profile '{newName}' already exists!")
-            return
+            return False
 
         old_filename = f"profile_{oldName}.json"
         new_filename = f"profile_{newName}.json"
