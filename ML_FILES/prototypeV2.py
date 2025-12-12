@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import numpy as np
 import cv2
 import tkinter as tk
@@ -7,16 +8,17 @@ from sklearn.neighbors import KNeighborsClassifier
 import mediapipe as mp
 import ctypes
 from ctypes import wintypes
-import pyautogui  # <-- for Cursor mode
+import pyautogui  # Cursor mode absolute positioning
 
-from ProfileManager import ProfileManager
-from Profiles import Profile
-from Actions import Actions
+from Actions import Actions  # your pydirectinput-based Actions.py
 
 # ================== PATH CONFIG ==================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(SCRIPT_DIR, "data", "landmarkVectors")
+
+# IMPORTANT: this must match your real file name
+PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "profile_1.json")
 
 # ================== CONSTANTS ====================
 
@@ -155,6 +157,47 @@ class GestureKNNModel:
 
 
 # =================================================
+#   PROFILE JSON LOADER (BYPASS ProfileManager)
+# =================================================
+
+def load_actions_from_profile_json(profile_path: str):
+    """
+    Loads profile_1.json (your format) and returns:
+      action_map: dict[name -> Actions]
+    """
+    action_map = {}
+
+    if not os.path.exists(profile_path):
+        print(f"[PROFILE] Missing: {profile_path}")
+        return action_map
+
+    try:
+        with open(profile_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        actions = data.get("Actions", [])
+        for a in actions:
+            name = a.get("name")
+            key = a.get("key_pressed")
+            input_type = a.get("input_type")
+
+            # skip empty/default placeholders
+            if not name or name == "default":
+                continue
+            if not key or not input_type:
+                continue
+
+            action_map[name] = Actions(name, key, input_type)
+
+        print(f"[PROFILE] Loaded {len(action_map)} actions from {os.path.basename(profile_path)}: {list(action_map.keys())}")
+        return action_map
+
+    except Exception as e:
+        print("[PROFILE] Failed to load:", e)
+        return action_map
+
+
+# =================================================
 #   GUI
 # =================================================
 
@@ -163,17 +206,42 @@ class ClickTesterGUI:
         self.app = app
         self.root = tk.Tk()
         self.root.title("Gesture Controller Tester")
-        self.root.geometry("420x360")
+        self.root.geometry("460x420")
 
         self.click_count = 0
         self.click_var = tk.StringVar(value="Clicks: 0")
         self.gesture_var = tk.StringVar(value="Last gesture: none")
         self.mode_var = tk.StringVar(value=self._mode_text())
 
+        # Live camera sensitivity (gain)
+        self.cam_sens_var = tk.StringVar(value=f"{self.app._joy_gain:.1f}")
+
         self._build_widgets()
 
     def _mode_text(self):
-        return f"Hand Mode: {self.app.control_mode.capitalize()} | Mouse Mode: {self.app.mouse_mode}"
+        return (
+            f"Hand Mode: {self.app.control_mode.capitalize()} | "
+            f"Mouse Mode: {self.app.mouse_mode} | "
+            f"Cam Sens: {self.app._joy_gain:.1f}"
+        )
+
+    def _apply_camera_sensitivity(self):
+        raw = self.cam_sens_var.get().strip()
+        try:
+            v = float(raw)
+        except ValueError:
+            self.cam_sens_var.set(f"{self.app._joy_gain:.1f}")
+            return
+
+        # clamp to sane range
+        if v < 1:
+            v = 1.0
+        if v > 300:
+            v = 300.0
+
+        self.app._joy_gain = float(v)
+        self.cam_sens_var.set(f"{self.app._joy_gain:.1f}")
+        self.mode_var.set(self._mode_text())
 
     def _build_widgets(self):
         btn = tk.Button(
@@ -195,7 +263,7 @@ class ClickTesterGUI:
             fg="blue",
         ).pack(pady=3)
 
-        # ===== Row 1: Hand mode buttons (ONE ROW) =====
+        # Row 1: hand mode buttons
         hand_frame = tk.Frame(self.root)
         hand_frame.pack(fill="x", pady=6)
 
@@ -209,21 +277,44 @@ class ClickTesterGUI:
             side="left", expand=True, padx=6
         )
 
-        # ===== Row 2: Mouse mode buttons (ONE ROW) =====
+        # Row 2: mouse mode buttons
         mouse_frame = tk.Frame(self.root)
         mouse_frame.pack(fill="x", pady=6)
 
-        tk.Button(
-            mouse_frame,
-            text="Camera Mode",
-            command=lambda: self.set_mouse_mode("CAMERA"),
-        ).pack(side="left", expand=True, padx=6)
+        tk.Button(mouse_frame, text="Camera Mode", command=lambda: self.set_mouse_mode("CAMERA")).pack(
+            side="left", expand=True, padx=6
+        )
+        tk.Button(mouse_frame, text="Cursor Mode", command=lambda: self.set_mouse_mode("CURSOR")).pack(
+            side="left", expand=True, padx=6
+        )
 
-        tk.Button(
-            mouse_frame,
-            text="Cursor Mode",
-            command=lambda: self.set_mouse_mode("CURSOR"),
-        ).pack(side="left", expand=True, padx=6)
+        # Row 3: Camera sensitivity input (LIVE)
+        sens_frame = tk.Frame(self.root)
+        sens_frame.pack(fill="x", pady=10)
+
+        tk.Label(sens_frame, text="Camera Sensitivity:", font=("Arial", 11)).pack(side="left", padx=8)
+
+        spin = tk.Spinbox(
+            sens_frame,
+            from_=1,
+            to=300,
+            increment=1,
+            width=8,
+            textvariable=self.cam_sens_var,
+            command=self._apply_camera_sensitivity,  # arrow clicks
+            font=("Arial", 11),
+        )
+        spin.pack(side="left", padx=6)
+
+        tk.Button(sens_frame, text="Apply", command=self._apply_camera_sensitivity).pack(side="left", padx=6)
+
+        spin.bind("<Return>", lambda e: self._apply_camera_sensitivity())
+        spin.bind("<FocusOut>", lambda e: self._apply_camera_sensitivity())
+
+        tk.Label(self.root, text="Tip: Higher = faster in CAMERA mode", font=("Arial", 10), fg="gray").pack(pady=2)
+
+        # optional reload button (very useful)
+        tk.Button(self.root, text="Reload profile_1.json", command=self.app.reload_profile_actions).pack(pady=6)
 
     def set_hand_mode(self, mode: str):
         self.app.control_mode = mode.lower()
@@ -263,7 +354,7 @@ class GestureControllerApp:
     mouse_mode: "CAMERA" | "CURSOR"
     """
 
-    def __init__(self, data_dir, active_profile_name="1", control_mode="right", mouse_mode="CAMERA"):
+    def __init__(self, data_dir, control_mode="right", mouse_mode="CAMERA"):
         self.data_dir = data_dir
         self.control_mode = control_mode.lower()
         self.mouse_mode = mouse_mode  # "CAMERA" or "CURSOR"
@@ -280,20 +371,12 @@ class GestureControllerApp:
         self.screen_w = ctypes.windll.user32.GetSystemMetrics(0)
         self.screen_h = ctypes.windll.user32.GetSystemMetrics(1)
 
-        self.profile_manager = self._load_or_create_manager()
-        self.active_profile = self._get_or_create_profile(active_profile_name)
-
-        self.gui = ClickTesterGUI(self)
-
-        self.prev_gesture = "none"
-        self.prev_hold_action = None
-
-        # CAMERA mode (relative joystick-style)
+        # CAMERA mode (relative joystick-style) --- set defaults BEFORE GUI
         self._joy_dx = 0.0
         self._joy_dy = 0.0
         self._joy_alpha = 0.18
         self._joy_deadzone = 0.04
-        self._joy_gain = 70.0
+        self._joy_gain = 70.0          # ✅ default sensitivity (current)
         self._joy_max_step = 70
 
         # CURSOR mode (absolute moveTo + EMA)
@@ -302,33 +385,24 @@ class GestureControllerApp:
         self._ema_alpha = 0.25
         self._cursor_deadzone_px = 2
 
-        # Optional: start cursor centered (helps CAMERA mode feel consistent)
+        # LOAD ACTIONS FROM profile_1.json
+        self.action_map = load_actions_from_profile_json(PROFILE_JSON_PATH)
+
+        self.gui = ClickTesterGUI(self)
+
+        self.prev_gesture = "none"
+        self.prev_hold_action = None
+
         RawMouse.set_pos(self.screen_w // 2, self.screen_h // 2)
 
-    # ---------- Profile manager helpers ----------
-
-    def _load_or_create_manager(self):
-        pm_file = "profileManager.json"
-        if os.path.exists(pm_file):
-            return ProfileManager.readFile(pm_file)
-        mgr = ProfileManager([])
-        mgr.writeFile(pm_file)
-        return mgr
-
-    def _get_or_create_profile(self, profile_name):
-        profile = self.profile_manager.getProfile(profile_name)
-        if profile is not None:
-            return profile
-        self.profile_manager.addProfile(profile_name)
-        return self.profile_manager.getProfile(profile_name)
+    def reload_profile_actions(self):
+        self.action_map = load_actions_from_profile_json(PROFILE_JSON_PATH)
 
     # ---------- mouse helpers ----------
 
     def _reset_mouse_state(self):
-        # CAMERA
         self._joy_dx = 0.0
         self._joy_dy = 0.0
-        # CURSOR
         self._ema_nx = None
         self._ema_ny = None
 
@@ -348,10 +422,8 @@ class GestureControllerApp:
         step_x = int(self._joy_dx * self._joy_gain)
         step_y = int(self._joy_dy * self._joy_gain)
 
-        if step_x > self._joy_max_step: step_x = self._joy_max_step
-        if step_x < -self._joy_max_step: step_x = -self._joy_max_step
-        if step_y > self._joy_max_step: step_y = self._joy_max_step
-        if step_y < -self._joy_max_step: step_y = -self._joy_max_step
+        step_x = max(-self._joy_max_step, min(self._joy_max_step, step_x))
+        step_y = max(-self._joy_max_step, min(self._joy_max_step, step_y))
 
         if step_x == 0 and step_y == 0:
             return
@@ -359,7 +431,6 @@ class GestureControllerApp:
         RawMouse.move_rel(step_x, step_y)
 
     def _mouse_move_cursor(self, nx: float, ny: float):
-        # EMA smooth normalized coords then moveTo absolute
         if self._ema_nx is None:
             self._ema_nx, self._ema_ny = nx, ny
         else:
@@ -517,10 +588,8 @@ class GestureControllerApp:
                     if pointer_hand is not None:
                         fx, fy = pointer_hand["tip_px"]
                         nx, ny = pointer_hand["tip_norm"]
-
                         cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
                         self._move_mouse(nx, ny)
-
                         pointer_debug = f"{pointer_hand['mp_label']} ({pointer_hand['raw_label']}, {pointer_hand['raw_conf']:.2f})"
 
                     # action drawing
@@ -532,59 +601,49 @@ class GestureControllerApp:
                         action_label = "none"
 
                     current_gesture = action_label
+                    self.gui.set_last_gesture(current_gesture)
 
-                    # map gesture -> Actions
-                    mapped_action_obj = None
-                    if current_gesture != "none":
-                        try:
-                            actions_list = self.active_profile.getActionList()
-                        except AttributeError:
-                            actions_list = []
+                    # === MAP gesture -> action (DIRECT JSON MAP) ===
+                    mapped_action_obj = self.action_map.get(current_gesture)
 
-                        for a in actions_list:
-                            try:
-                                name = a.getName()
-                                key = a.getKeyPressed()
-                            except AttributeError:
-                                continue
-                            if name == current_gesture or key == current_gesture:
-                                mapped_action_obj = a
-                                break
-
-                        if mapped_action_obj is None:
-                            try:
-                                mapped_action_obj = self.active_profile.getAction(current_gesture)
-                            except Exception:
-                                mapped_action_obj = None
-
-                    # stop hold if gesture changed away
+                    # ---- FORCE STOP HOLD when gesture is none OR changed OR unmapped ----
                     if self.prev_hold_action is not None:
-                        if current_gesture != self.prev_hold_action.getName():
+                        if current_gesture == "none" or mapped_action_obj is None or current_gesture != self.prev_hold_action.getName():
                             self.prev_hold_action.stopHold()
                             self.prev_hold_action = None
 
-                    # execute action
+                    fired_text = "NO"
+                    mapped_text = "None"
+
                     if current_gesture != "none" and mapped_action_obj is not None:
                         input_type = mapped_action_obj.getInputType()
+                        key = mapped_action_obj.getKeyPressed()
+                        mapped_text = f"{current_gesture} -> {key} ({input_type})"
 
                         if input_type == "Click":
                             if current_gesture != self.prev_gesture:
                                 mapped_action_obj.useAction(mapped_action_obj.getName())
+                                fired_text = "CLICK"
+                                print(f"[FIRE] CLICK {current_gesture} -> {key}")
                         elif input_type == "Hold":
                             mapped_action_obj.useAction(mapped_action_obj.getName())
                             self.prev_hold_action = mapped_action_obj
+                            fired_text = "HOLD"
+                    else:
+                        pass
 
-                    self.gui.set_last_gesture(current_gesture)
+                    debug_text = f"Pointer: {pointer_debug} | Action: {action_debug} | Mapped: {mapped_text} | Fired: {fired_text}"
+                    cv2.putText(frame, debug_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 2)
 
-                    debug_text = f"Pointer: {pointer_debug} | Action: {action_debug} | Gesture: {current_gesture}"
-                    cv2.putText(frame, debug_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                     cv2.imshow("Gesture Pointer Prototype (Camera/Cursor Toggle)", frame)
 
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
+                    k = cv2.waitKey(1) & 0xFF
+                    if k == ord("q"):
                         break
+                    elif k == ord("r"):
+                        self.reload_profile_actions()
 
                     self.prev_gesture = current_gesture
-                    time.sleep(0.001)
 
         finally:
             self._cleanup()
@@ -607,6 +666,5 @@ class GestureControllerApp:
 # =================================================
 
 if __name__ == "__main__":
-    # mouse_mode: "CAMERA" or "CURSOR"
-    app = GestureControllerApp(DATA_DIR, active_profile_name="1", control_mode="right", mouse_mode="CURSOR")
+    app = GestureControllerApp(DATA_DIR, control_mode="right", mouse_mode="CURSOR")
     app.run()
