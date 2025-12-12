@@ -236,8 +236,8 @@ class ClickTesterGUI:
         # clamp to sane range
         if v < 1:
             v = 1.0
-        if v > 300:
-            v = 300.0
+        if v > 9999:
+            v = 9999.0
 
         self.app._joy_gain = float(v)
         self.cam_sens_var.set(f"{self.app._joy_gain:.1f}")
@@ -297,7 +297,7 @@ class ClickTesterGUI:
         spin = tk.Spinbox(
             sens_frame,
             from_=1,
-            to=300,
+            to=9999,
             increment=1,
             width=8,
             textvariable=self.cam_sens_var,
