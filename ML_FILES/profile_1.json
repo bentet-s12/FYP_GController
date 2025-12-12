@@ -8,7 +8,7 @@
         },
         {
             "name": "hold",
-            "key_pressed": "left",
+            "key_pressed": "w",
             "input_type": "Hold"
         }
     ]
