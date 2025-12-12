@@ -376,8 +376,13 @@ class GestureControllerApp:
         self._joy_dy = 0.0
         self._joy_alpha = 0.18
         self._joy_deadzone = 0.04
-        self._joy_gain = 70.0          # ✅ default sensitivity (current)
+        self._joy_gain = 70.0          # default sensitivity (current)
         self._joy_max_step = 70
+        # EXTRA smoothing for CAMERA mode (prevents jitter at high gain)
+        self._step_ema_x = 0.0
+        self._step_ema_y = 0.0
+        self._step_alpha = 0.12   # smaller = smoother (0.06–0.20 is good)
+        self._min_step_px = 2     # ignore tiny movement after smoothing
 
         # CURSOR mode (absolute moveTo + EMA)
         self._ema_nx = None
@@ -405,30 +410,52 @@ class GestureControllerApp:
         self._joy_dy = 0.0
         self._ema_nx = None
         self._ema_ny = None
+        # reset camera step smoothing
+        self._step_ema_x = 0.0
+        self._step_ema_y = 0.0
 
     def _mouse_move_camera(self, nx: float, ny: float):
         dx = nx - 0.5
         dy = ny - 0.5
 
+        # deadzone in normalized space
         if abs(dx) < self._joy_deadzone:
             dx = 0.0
         if abs(dy) < self._joy_deadzone:
             dy = 0.0
 
+        # 1) Smooth normalized joystick direction
         a = self._joy_alpha
         self._joy_dx = (1 - a) * self._joy_dx + a * dx
         self._joy_dy = (1 - a) * self._joy_dy + a * dy
 
-        step_x = int(self._joy_dx * self._joy_gain)
-        step_y = int(self._joy_dy * self._joy_gain)
+        # raw step from sensitivity
+        raw_step_x = self._joy_dx * self._joy_gain
+        raw_step_y = self._joy_dy * self._joy_gain
 
-        step_x = max(-self._joy_max_step, min(self._joy_max_step, step_x))
-        step_y = max(-self._joy_max_step, min(self._joy_max_step, step_y))
+        # clamp BEFORE step smoothing (prevents wild swings)
+        raw_step_x = max(-self._joy_max_step, min(self._joy_max_step, raw_step_x))
+        raw_step_y = max(-self._joy_max_step, min(self._joy_max_step, raw_step_y))
+
+        # 2) Smooth pixel steps (this is what kills jitter at high sensitivity)
+        b = self._step_alpha
+        self._step_ema_x = (1 - b) * self._step_ema_x + b * raw_step_x
+        self._step_ema_y = (1 - b) * self._step_ema_y + b * raw_step_y
+
+        step_x = int(round(self._step_ema_x))
+        step_y = int(round(self._step_ema_y))
+
+        # 3) Deadband in pixel space (ignore tiny oscillations)
+        if abs(step_x) < self._min_step_px:
+            step_x = 0
+        if abs(step_y) < self._min_step_px:
+            step_y = 0
 
         if step_x == 0 and step_y == 0:
             return
 
         RawMouse.move_rel(step_x, step_y)
+
 
     def _mouse_move_cursor(self, nx: float, ny: float):
         if self._ema_nx is None:
