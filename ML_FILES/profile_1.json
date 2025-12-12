@@ -8,13 +8,18 @@
     },
     {
       "name": "hold",
-      "key_pressed": "left",
+      "key_pressed": "w",
       "input_type": "Hold"
     },
     {
       "name": "default",
       "key_pressed": null,
       "input_type": null
+    },
+    {
+      "name": "shoot_hold",
+      "key_pressed": "left",
+      "input_type": "Hold"
     }
   ]
 }
