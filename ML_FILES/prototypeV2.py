@@ -3,10 +3,12 @@ import time
 import numpy as np
 import cv2
 import pyautogui
+pyautogui.PAUSE = 0
 import tkinter as tk
 from sklearn.neighbors import KNeighborsClassifier
 import mediapipe as mp
 import pydirectinput
+import ctypes
 
 from ProfileManager import ProfileManager
 from Profiles import Profile
@@ -20,9 +22,8 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data", "landmarkVectors")  # landmark datas
 # ================== CONSTANTS ====================
 
 K_NEIGHBORS = 3
-SMOOTH_WINDOW = 3
 GESTURE_CONF_THRESHOLD = 0.6  # min probability to trust a gesture
-
+pyautogui.PAUSE = 0
 
 # =================================================
 #   HAND FEATURE EXTRACTOR (LANDMARKS -> 42-D VECTORS)
@@ -107,7 +108,7 @@ class GestureKNNModel:
         print("[MODEL] Loaded y:", y.shape)
         print("[MODEL] Classes:", self.class_names)
 
-        self.knn = KNeighborsClassifier(n_neighbors=self.k_neighbors)
+        self.knn = KNeighborsClassifier(n_neighbors=self.k_neighbors, n_jobs=-1)
         self.knn.fit(X, y)
 
         self.id_to_name = {i: name for i, name in enumerate(self.class_names)}
@@ -143,23 +144,30 @@ class GestureKNNModel:
 
 class ClickTesterGUI:
     """
-    Small Tkinter window:
-      - big button showing click count (increments on real left click)
-      - label showing last smoothed gesture
+    Tkinter window:
+      - big button showing click count
+      - text showing last gesture
+      - text showing current control mode
+      - buttons to switch modes
     """
 
-    def __init__(self):
+    def __init__(self, app):
+        self.app = app
         self.root = tk.Tk()
         self.root.title("Gesture Controller Tester")
-        self.root.geometry("380x260")
+        self.root.geometry("380x300")
 
         self.click_count = 0
         self.click_var = tk.StringVar(value="Clicks: 0")
         self.status_var = tk.StringVar(value="Last gesture: none")
 
+        # NEW — shows current mode in the GUI
+        self.mode_display_var = tk.StringVar(value=f"Current Mode: {self.app.control_mode.capitalize()}")
+
         self._build_widgets()
 
     def _build_widgets(self):
+        # Click counter button
         btn = tk.Button(
             self.root,
             textvariable=self.click_var,
@@ -170,12 +178,51 @@ class ClickTesterGUI:
         )
         btn.pack(expand=True, fill="both", pady=10)
 
+        # Gesture status text
         status_label = tk.Label(
             self.root,
             textvariable=self.status_var,
             font=("Arial", 12),
         )
-        status_label.pack(pady=5)
+        status_label.pack(pady=3)
+
+        # 🔥 NEW: Mode text display
+        mode_label = tk.Label(
+            self.root,
+            textvariable=self.mode_display_var,
+            font=("Arial", 12, "bold"),
+            fg="blue"
+        )
+        mode_label.pack(pady=3)
+
+        # Handedness buttons
+        hand_frame = tk.Frame(self.root)
+        hand_frame.pack(side="bottom", fill="x", pady=10)
+
+        tk.Button(
+            hand_frame,
+            text="Left-handed",
+            command=lambda: self.set_mode("left")
+        ).pack(side="left", expand=True, padx=10)
+
+        tk.Button(
+            hand_frame,
+            text="Right-handed",
+            command=lambda: self.set_mode("right")
+        ).pack(side="right", expand=True, padx=10)
+
+        tk.Button(
+            hand_frame,
+            text="Auto",
+            command=lambda: self.set_mode("auto")
+        ).pack(side="bottom", expand=True, pady=5)
+
+    def set_mode(self, mode: str):
+        """Called when GUI buttons are pressed."""
+        mode = mode.lower()
+        self.app.control_mode = mode  # update app
+        self.mode_display_var.set(f"Current Mode: {mode.capitalize()}")  # update GUI text
+        print(f"[GUI] Switched control mode to: {mode}")
 
     def increment_click_counter(self):
         self.click_count += 1
@@ -208,25 +255,22 @@ class GestureControllerApp:
           * 'point'     -> pointer hand (moves mouse)
           * any other class -> treated as gesture ID
       - pointer and action hands MUST be different hands (when 2 hands)
-      - sends the **smoothed gesture name** to Profile.callfunction(...)
+      - sends the gesture name to Profile / Actions
     """
 
-    def __init__(self, data_dir, active_profile_name="1"):
+    def __init__(self, data_dir, active_profile_name="1", control_mode="right"):
         self.data_dir = data_dir
+        self.control_mode = control_mode.lower()   # "auto", "right", "left"
 
         # Model
         self.model = GestureKNNModel(data_dir=self.data_dir, k_neighbors=K_NEIGHBORS)
 
         # GUI
-        self.gui = ClickTesterGUI()
+        self.gui = ClickTesterGUI(self)
 
         # MediaPipe Hands
         self.mp_hands = mp.solutions.hands
         self.mp_drawing = mp.solutions.drawing_utils
-
-        # Smoothing buffer
-        self.last_action_predictions = []  # gesture names (e.g., "left_click", "hold", "w", etc.)
-        self.last_smoothed_action = "none"
 
         # Webcam
         self.cap = cv2.VideoCapture(0)
@@ -241,6 +285,23 @@ class GestureControllerApp:
         self.profile_manager = self._load_or_create_manager()
         self.active_profile_name = active_profile_name
         self.active_profile = self._get_or_create_profile(active_profile_name)
+
+    # ---------- MOUSE MOVEMENT ----------
+    PUL = ctypes.POINTER(ctypes.c_ulong)
+    class Input_I(ctypes.Union):
+        _fields_ = [("mi", MouseInput)]
+    class Input(ctypes.Structure):
+        _fields_ = [
+            ("type", ctypes.c_ulong),
+            ("ii", Input_I)
+        ]
+    # --- Raw relative mouse movement (fastest possible) ---
+    def move_mouse_raw(dx, dy):
+        extra = ctypes.c_ulong(0)
+        ii_ = Input_I()
+        ii_.mi = MouseInput(dx, dy, 0, 0x0001, 0, ctypes.pointer(extra))
+        command = Input(ctypes.c_ulong(0), ii_)
+        ctypes.windll.user32.SendInput(1, ctypes.pointer(command), ctypes.sizeof(command))
 
     # ---------- PROFILE MANAGER HELPERS ----------
 
@@ -272,6 +333,119 @@ class GestureControllerApp:
         print(f"[PROFILE] Profile '{profile_name}' not found, creating new one.")
         self.profile_manager.addProfile(profile_name)
         return self.profile_manager.getProfile(profile_name)
+
+    # ---------- HAND MODE ----------
+
+    def _select_pointer_and_action(self, hands_info):
+        """
+        Decide pointer and action hands based on control_mode:
+
+        control_mode = "right":
+            - Pointer: ONLY a 'Right' hand (highest confidence).
+            - Action: ONLY a 'Left' hand (highest confidence),
+                      gesture != 'point', above threshold.
+
+        control_mode = "left":
+            - Pointer: ONLY a 'Left' hand (highest confidence).
+            - Action: ONLY a 'Right' hand (highest confidence),
+                      gesture != 'point', above threshold.
+
+        control_mode = "auto":
+            - Pointer: any hand with 'point' gesture & confidence >= threshold,
+                       otherwise best hand by confidence.
+            - Action: must be a *different* hand from pointer, gesture != 'point',
+                      above threshold.
+        """
+        pointer_hand = None
+        action_hand = None
+        action_label = "none"
+        action_conf = 0.0
+
+        if not hands_info:
+            return pointer_hand, action_hand, action_label, action_conf
+
+        mode = self.control_mode.lower()
+
+        # ---------- RIGHT-HANDED MODE ----------
+        if mode == "right":
+            right_hands = [hi for hi in hands_info if hi["mp_label"] == "Right"]
+            left_hands  = [hi for hi in hands_info if hi["mp_label"] == "Left"]
+
+            # Pointer: ONLY right hand. If none, NO pointer.
+            if right_hands:
+                pointer_hand = max(right_hands, key=lambda hi: hi["raw_conf"])
+            else:
+                pointer_hand = None  # <- do NOT fall back to left hand
+
+            # Action: ONLY from left hands, never the pointer, not 'point', above threshold
+            for hi in left_hands:
+                if hi is pointer_hand:
+                    continue
+                if hi["raw_conf"] < GESTURE_CONF_THRESHOLD:
+                    continue
+                if hi["raw_label"] == "point":
+                    continue
+                if hi["raw_conf"] > action_conf:
+                    action_conf = hi["raw_conf"]
+                    action_label = hi["raw_label"]
+                    action_hand = hi
+
+            return pointer_hand, action_hand, action_label, action_conf
+
+        # ---------- LEFT-HANDED MODE ----------
+        if mode == "left":
+            right_hands = [hi for hi in hands_info if hi["mp_label"] == "Right"]
+            left_hands  = [hi for hi in hands_info if hi["mp_label"] == "Left"]
+
+            # Pointer: ONLY left hand. If none, NO pointer.
+            if left_hands:
+                pointer_hand = max(left_hands, key=lambda hi: hi["raw_conf"])
+            else:
+                pointer_hand = None  # <- do NOT fall back to right hand
+
+            # Action: ONLY from right hands, never the pointer, not 'point', above threshold
+            for hi in right_hands:
+                if hi is pointer_hand:
+                    continue
+                if hi["raw_conf"] < GESTURE_CONF_THRESHOLD:
+                    continue
+                if hi["raw_label"] == "point":
+                    continue
+                if hi["raw_conf"] > action_conf:
+                    action_conf = hi["raw_conf"]
+                    action_label = hi["raw_label"]
+                    action_hand = hi
+
+            return pointer_hand, action_hand, action_label, action_conf
+
+        # ---------- AUTO MODE ----------
+        # Pointer: prefer any confident "point" gesture
+        point_candidates = [
+            hi for hi in hands_info
+            if hi["raw_label"] == "point" and hi["raw_conf"] >= GESTURE_CONF_THRESHOLD
+        ]
+
+        if point_candidates:
+            pointer_hand = max(point_candidates, key=lambda hi: hi["raw_conf"])
+        else:
+            # Fallback: highest-confidence hand
+            pointer_hand = max(hands_info, key=lambda hi: hi["raw_conf"])
+
+        # Action: must be a *different* hand from pointer, not 'point', above threshold
+        if len(hands_info) >= 2:
+            for hi in hands_info:
+                if hi is pointer_hand:
+                    continue  # enforce: one hand cannot be both pointer and action
+                if hi["raw_conf"] < GESTURE_CONF_THRESHOLD:
+                    continue
+                if hi["raw_label"] == "point":
+                    continue
+                if hi["raw_conf"] > action_conf:
+                    action_conf = hi["raw_conf"]
+                    action_label = hi["raw_label"]
+                    action_hand = hi
+
+        return pointer_hand, action_hand, action_label, action_conf
 
     # ---------- HAND INFO ----------
 
@@ -310,7 +484,7 @@ class GestureControllerApp:
 
     def run(self):
         # Track previous gesture & action for transition logic
-        prev_smoothed_action = "none"
+        prev_gesture = "none"
         prev_hold_action = None  # Actions object currently holding, if any
 
         try:
@@ -344,68 +518,36 @@ class GestureControllerApp:
                         info["raw_label"] = raw_label
                         info["raw_conf"] = raw_conf
 
-                    # ----- Pointer hand selection (prefer 'point') -----
-                    pointer_hand = None
-                    if hands_info:
-                        point_candidates = [
-                            hi for hi in hands_info
-                            if hi["raw_label"] == "point"
-                            and hi["raw_conf"] >= GESTURE_CONF_THRESHOLD
-                        ]
-                        if point_candidates:
-                            pointer_hand = max(
-                                point_candidates, key=lambda hi: hi["raw_conf"]
-                            )
-                        else:
-                            pointer_hand = hands_info[0]
+                    # ----- Pointer & Action selection based on mode ("auto", "right", "left") -----
+                    pointer_hand, action_hand, action_label, action_conf = \
+                        self._select_pointer_and_action(hands_info)
 
-                    # Move mouse with pointer hand
+                    # ----- Move mouse with pointer hand -----
                     pointer_debug = "None"
                     if pointer_hand is not None:
                         fx, fy = pointer_hand["tip_px"]
                         nx, ny = pointer_hand["tip_norm"]
 
-                        # draw fingertip for pointer hand
+                        # draw fingertip ONLY for pointer hand
                         cv2.circle(frame, (fx, fy), 8, (0, 0, 255), -1)
 
                         sx = int(nx * self.screen_w)
                         sy = int(ny * self.screen_h)
-                        pyautogui.moveTo(sx, sy, duration=0)
+                        move_mouse_absolute(sx, sy)
 
                         pointer_debug = (
                             f"{pointer_hand['mp_label']} "
                             f"({pointer_hand['raw_label']}, {pointer_hand['raw_conf']:.2f})"
                         )
 
-                    # ----- Action hand selection (must be different from pointer if 2 hands) -----
-                    action_hand = None
-                    action_label = "none"
-                    action_conf = 0.0
+                    # ----- Draw action hand (if any) -----
                     action_debug = "None"
-
-                    if hands_info:
-                        if len(hands_info) >= 2:
-                            for hi in hands_info:
-                                if hi is pointer_hand:
-                                    continue  # skip pointer
-
-                                if hi["raw_conf"] < GESTURE_CONF_THRESHOLD:
-                                    continue
-
-                                # 'point' is reserved for pointer only
-                                if hi["raw_label"] == "point":
-                                    continue
-
-                                if hi["raw_conf"] > action_conf:
-                                    action_conf = hi["raw_conf"]
-                                    action_label = hi["raw_label"]
-                                    action_hand = hi
-
                     if action_hand is not None:
                         action_debug = (
                             f"{action_hand['mp_label']} "
                             f"({action_label}, {action_conf:.2f})"
                         )
+                        # ONLY draw skeleton for the action hand, NO red dot
                         self.mp_drawing.draw_landmarks(
                             frame,
                             action_hand["hand_lms"],
@@ -415,25 +557,13 @@ class GestureControllerApp:
                         action_label = "none"
                         action_conf = 0.0
 
-                    # ----- Smooth gesture name over last N frames -----
-                    self.last_action_predictions.append(action_label)
-                    if len(self.last_action_predictions) > SMOOTH_WINDOW:
-                        self.last_action_predictions.pop(0)
+                    # ===== CURRENT GESTURE (no smoothing) =====
+                    current_gesture = action_label
 
-                    # Majority vote on gesture names
-                    counts = {}
-                    for g in self.last_action_predictions:
-                        counts[g] = counts.get(g, 0) + 1
-
-                    smoothed_action = max(counts, key=counts.get)
-                    self.last_smoothed_action = smoothed_action
-
-                    # ===== Map smoothed gesture -> Actions object =====
-                    print(f"[GESTURE] Smoothed gesture: '{smoothed_action}'")
-
+                    # ===== Map gesture -> Actions object =====
                     mapped_action_obj = None
 
-                    if smoothed_action != "none":
+                    if current_gesture != "none":
                         # 1) look through all actions in the active profile
                         try:
                             actions_list = self.active_profile.getActionList()
@@ -447,14 +577,14 @@ class GestureControllerApp:
                             except AttributeError:
                                 continue
 
-                            if name == smoothed_action or key == smoothed_action:
+                            if name == current_gesture or key == current_gesture:
                                 mapped_action_obj = a
                                 break
 
                         # 2) fallback: getAction by name
                         if mapped_action_obj is None:
                             try:
-                                direct_action = self.active_profile.getAction(smoothed_action)
+                                direct_action = self.active_profile.getAction(current_gesture)
                                 if direct_action is not None:
                                     mapped_action_obj = direct_action
                             except AttributeError:
@@ -463,19 +593,18 @@ class GestureControllerApp:
                     # ===== Handle transition logic: Click vs Hold =====
                     # If we had a previous hold action and gesture changed away, stop it
                     if prev_hold_action is not None:
-                        if smoothed_action != prev_hold_action.getName():
-                            # gesture changed or disappeared -> stop hold
+                        if current_gesture != prev_hold_action.getName():
                             prev_hold_action.stopHold()
                             prev_hold_action = None
 
                     # Now handle the *current* gesture
-                    if smoothed_action != "none" and mapped_action_obj is not None:
+                    if current_gesture != "none" and mapped_action_obj is not None:
                         input_type = mapped_action_obj.getInputType()
 
                         # CLICK -> only on transition (prev != current)
                         if input_type == "Click":
-                            if smoothed_action != prev_smoothed_action:
-                                print(f"[ACTION] Single click for '{smoothed_action}'")
+                            if current_gesture != prev_gesture:
+                                print(f"[ACTION] Single click for '{current_gesture}'")
                                 mapped_action_obj.useAction(mapped_action_obj.getName())
 
                         # HOLD -> call every frame; Actions takes care of starting thread once
@@ -489,13 +618,13 @@ class GestureControllerApp:
                         pass
 
                     # Update GUI with last gesture
-                    self.gui.set_last_gesture(smoothed_action)
+                    self.gui.set_last_gesture(current_gesture)
 
                     # ----- Debug overlay -----
                     debug_text = (
                         f"Pointer: {pointer_debug} | "
                         f"Action: {action_debug} | "
-                        f"Smoothed: {smoothed_action}"
+                        f"Gesture: {current_gesture}"
                     )
                     cv2.putText(
                         frame,
@@ -513,9 +642,7 @@ class GestureControllerApp:
                         break
 
                     # update previous for next loop
-                    prev_smoothed_action = smoothed_action
-
-                    time.sleep(0.01)
+                    prev_gesture = current_gesture
 
         finally:
             self._cleanup()
@@ -531,6 +658,6 @@ class GestureControllerApp:
 # =================================================
 
 if __name__ == "__main__":
-    # Change "1" to whichever profile ID you want as default
-    app = GestureControllerApp(DATA_DIR, active_profile_name="1")
+    # Change control_mode to "right", "left", or "auto"
+    app = GestureControllerApp(DATA_DIR, active_profile_name="1", control_mode="right")
     app.run()
