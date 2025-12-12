@@ -1,15 +1,20 @@
 {
-    "Profile_ID": "1",
-    "Actions": [
-        {
-            "name": "left_click",
-            "key_pressed": "left",
-            "input_type": "Click"
-        },
-        {
-            "name": "hold",
-            "key_pressed": "left",
-            "input_type": "Hold"
-        }
-    ]
+  "Profile_ID": "1",
+  "Actions": [
+    {
+      "name": "left_click",
+      "key_pressed": "left",
+      "input_type": "Click"
+    },
+    {
+      "name": "hold",
+      "key_pressed": "left",
+      "input_type": "Hold"
+    },
+    {
+      "name": "default",
+      "key_pressed": null,
+      "input_type": null
+    }
+  ]
 }

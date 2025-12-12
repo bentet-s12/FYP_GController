@@ -2,31 +2,25 @@ import pydirectinput
 import threading
 import time
 
+
 class Actions:
     def __init__(self, name, key_pressed=None, input_type=None):
         self._name = name
         self._key_pressed = key_pressed
-        self._input_type = input_type
-        
-        self.holdvalue = False
+        self._input_type = input_type  # "Click" or "Hold"
+
+        self._hold_flag = False
         self._is_holding = False
         self._thread = None
+        self._lock = threading.Lock()
 
     # ----- Serialization -----
     def toDict(self):
-        return {
-            "name": self._name,
-            "key_pressed": self._key_pressed,
-            "input_type": self._input_type
-        }
+        return {"name": self._name, "key_pressed": self._key_pressed, "input_type": self._input_type}
 
     @staticmethod
     def fromDict(d):
-        return Actions(
-            name=d["name"],
-            key_pressed=d["key_pressed"],
-            input_type=d["input_type"]
-        )
+        return Actions(name=d.get("name"), key_pressed=d.get("key_pressed"), input_type=d.get("input_type"))
 
     # ----- Getters -----
     def getName(self):
@@ -38,104 +32,142 @@ class Actions:
     def getInputType(self):
         return self._input_type
 
-    def setholdvalue(self, newholdvalue):
-        self.holdvalue = newholdvalue
-        
-    def compareName(self, name_check):
-        return self._name == name_check
-
+    # ----- Setters (keep your original naming too) -----
     def setName(self, newName):
         self._name = newName
 
-    def SetKey(self,newKey):
+    def SetKey(self, newKey):
         self._key_pressed = newKey
 
-    def SetDuration(self,newDuration):
+    def SetDuration(self, newDuration):
         self._input_type = newDuration
-    # ----- HOLD LOOP -----
+
+    # ----- Internal helpers -----
+    @staticmethod
+    def _is_mouse_button(key: str) -> bool:
+        return key in ("left", "right", "middle")
+
+    def _token_matches_this_action(self, token) -> bool:
+        """
+        token can be:
+          - gesture name (e.g. "left_click")
+          - key binding (e.g. "left", "space", "w")
+          - None (meaning "execute this action")
+        """
+        if token is None:
+            return True
+        return token == self._name or token == self._key_pressed
+
+    # ----- HOLD THREAD -----
     def _hold_loop(self):
         key = self._key_pressed
-        print(f"[Hold Thread] Started repeating {key}")
-        if key in ("left", "right", "middle"):# mouse hold
-            while self.holdvalue:
-                pydirectinput.mouseDown(button=self._key_pressed)
-                time.sleep(0.05)
-            pydirectinput.mouseUp(button=key)
-        else:
-            while self.holdvalue:
-                pydirectinput.keyDown(key)
-                time.sleep(0.5)
-
-            pydirectinput.keyUp(key)
-
-        print(f"[Hold Thread] Stopped {key}")
-        self._is_holding = False
-        
-    def stopHold(self):
-        """Force stop any ongoing hold"""
-        self.holdvalue = False
-        if self._is_holding:
-            self._is_holding = False
-        if not self._key_pressed:
+        if not key:
+            with self._lock:
+                self._is_holding = False
+                self._hold_flag = False
             return
-        # keyUp to guarantee release
-        if self._key_pressed not in ("left", "right", "middle"):
-            pydirectinput.keyUp(self._key_pressed)
-        else:
-            pydirectinput.mouseUp(button=self._key_pressed)
+
+        # Press down ONCE
+        try:
+            if self._is_mouse_button(key):
+                pydirectinput.mouseDown(button=key)
+            else:
+                pydirectinput.keyDown(key)
+
+            # Wait until stopped
+            while True:
+                with self._lock:
+                    if not self._hold_flag:
+                        break
+                time.sleep(0.01)
+
+        finally:
+            # Release ONCE
+            try:
+                if self._is_mouse_button(key):
+                    pydirectinput.mouseUp(button=key)
+                else:
+                    pydirectinput.keyUp(key)
+            except Exception:
+                pass
+
+            with self._lock:
+                self._is_holding = False
+                self._hold_flag = False
+
+    def stopHold(self):
+        """Force stop any ongoing hold + guarantee release."""
+        with self._lock:
+            self._hold_flag = False
+            was_holding = self._is_holding
+
+        # If holding, the thread will release in finally block.
+        # But also do a "safety release" right now.
+        key = self._key_pressed
+        if not key:
+            return
+
+        try:
+            if self._is_mouse_button(key):
+                pydirectinput.mouseUp(button=key)
+            else:
+                pydirectinput.keyUp(key)
+        except Exception:
+            pass
+
+        # Optional: wait a bit for thread to finish (non-blocking-ish)
+        if was_holding and self._thread is not None and self._thread.is_alive():
+            self._thread.join(timeout=0.05)
+
     # ----- MAIN ACTION -----
-    def useAction(self, ActionName):
-        if ActionName != self._name:
-            # If this is a different action, stop hold if needed
-            if self._is_holding:
-                self.stopHold()
+    def useAction(self, token=None):
+        """
+        Execute this action if token matches this action.
+        token can be: gesture name OR key_pressed OR None.
+        """
+        if not self._token_matches_this_action(token):
+            # If we're holding and some other token came in, don't do anything here.
+            # (Your app already stops holds when gesture changes.)
+            return
+
+        key = self._key_pressed
+        if not key or not self._input_type:
             return
 
         # --- CLICK ---
         if self._input_type == "Click":
-            if self._key_pressed in ("left", "right", "middle"):
-                pydirectinput.click(button=self._key_pressed)
+            if self._is_mouse_button(key):
+                pydirectinput.click(button=key)
             else:
-                pydirectinput.press(self._key_pressed)
+                pydirectinput.press(key)
             return
 
         # --- HOLD ---
         if self._input_type == "Hold":
-            # Start hold only if not already holding
-            if not self._is_holding:
-                self.holdvalue = True  # internal only
+            with self._lock:
+                if self._is_holding:
+                    return
+                self._hold_flag = True
                 self._is_holding = True
-                self._thread = threading.Thread(
-                    target=self._hold_loop,
-                    daemon=True
-                )
-                self._thread.start()
+
+            self._thread = threading.Thread(target=self._hold_loop, daemon=True)
+            self._thread.start()
 
 
 if __name__ == "__main__":
-    # --- Create some actions ---
-    action_hold = Actions("MoveForward", "w", "Hold")
-    action_click = Actions("Jump", "space", "Click")
-    action_mouse = Actions("Shoot", "left", "Click")
+    # Quick manual test:
+    action_hold = Actions("hold_w", "w", "Hold")
+    action_click = Actions("jump", "space", "Click")
+    action_mouse = Actions("shoot", "left", "Click")
 
-    all_actions = [action_hold, action_click, action_mouse]
+    print("Type: hold_w / w / jump / space / shoot / left")
+    print("Type: stop to stop holds")
 
-    # --- Simulate triggering actions ---
-    print("Starting test. Press Ctrl+C to stop.")
+    while True:
+        cmd = input("> ").strip()
+        if cmd == "stop":
+            action_hold.stopHold()
+            continue
 
-    try:
-        while True:
-            cmd = input("Type action to trigger (MoveForward / Jump / Shoot / None): ").strip()
-
-            for action in all_actions:
-                action.useAction(cmd)  # automatically handles hold and stop if gesture changes
-
-            # Show internal state for debugging
-            for action in all_actions:
-                print(f"{action.getName()} | is_holding: {action._is_holding}")
-            print("---")
-
-    except KeyboardInterrupt:
-        print("Exiting test, stopping all holds...")
-        for action in all_actions:
-            action.stopHold()
+        for a in (action_hold, action_click, action_mouse):
+            a.useAction(cmd)
