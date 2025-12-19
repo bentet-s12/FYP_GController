@@ -20,6 +20,26 @@
       "name": "shoot_hold",
       "key_pressed": "left",
       "input_type": "Hold"
+    },
+    {
+      "name": "left",
+      "key_pressed": "left",
+      "input_type": "Hold"
+    },
+    {
+      "name": "right",
+      "key_pressed": "r",
+      "input_type": "Hold"
+    },
+    {
+      "name": "up",
+      "key_pressed": "up",
+      "input_type": "Hold"
+    },
+    {
+      "name": "down",
+      "key_pressed": "down",
+      "input_type": "Hold"
     }
   ]
 }
