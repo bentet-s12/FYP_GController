@@ -131,16 +131,13 @@ class Actions:
         if was_holding and self._thread is not None and self._thread.is_alive():
             self._thread.join(timeout=0.05)
 
-    # ----- MAIN ACTION -----
+     # ----- MAIN ACTION -----
     def useAction(self, token=None):
-        """
-        Execute this action if token matches this action.
-        token can be: gesture name OR key_pressed OR None.
-        """
-        if not self._token_matches_this_action(token):
-            # If we're holding and some other token came in, don't do anything here.
-            # (Your app already stops holds when gesture changes.)
-            return
+
+        # --- bypass token check if None ---
+        if token is not None:
+            if token != self._name and token != self._key_pressed:
+                return  # token does not match this action
 
         key = self._key_pressed
         if not key or not self._input_type:
@@ -148,22 +145,28 @@ class Actions:
 
         # --- CLICK ---
         if self._input_type == "Click":
-            if self._key_type == "Mouse":
-                pydirectinput.click(button=key)
-            else:
-                pydirectinput.press(key)
+            try:
+                if self._key_type == "Mouse":
+                    pydirectinput.click(button=key)
+                else:
+                    pydirectinput.press(key)
+            except Exception as e:
+                print(f"[Actions] Click failed for {key}: {e}")
             return
 
-         # --- DOUBLE CLICK ---
+        # --- DOUBLE CLICK ---
         if self._input_type == "D_Click":
-            if self._key_type == "Mouse":
-                pydirectinput.click(button=key)
-                time.sleep(0.04)
-                pydirectinput.click(button=key)
-            else:
-                pydirectinput.press(key)
-                time.sleep(0.04)
-                pydirectinput.press(key)
+            try:
+                if self._key_type == "Mouse":
+                    pydirectinput.click(button=key)
+                    time.sleep(0.04)
+                    pydirectinput.click(button=key)
+                else:
+                    pydirectinput.press(key)
+                    time.sleep(0.04)
+                    pydirectinput.press(key)
+            except Exception as e:
+                print(f"[Actions] D_Click failed for {key}: {e}")
             return
 
         # --- HOLD ---
@@ -188,7 +191,7 @@ if __name__ == "__main__":
     action_click = Actions("jump", "space", "Click", key_type="Keyboard")
 
     # Mouse HOLD (left mouse button)
-    action_mouse = Actions("shoot", "left", "Hold", key_type="Keyboard")
+    action_mouse = Actions("shoot", "left", "Hold", key_type="Mouse")
 
     print("Type: hold_w / w  -> hold W")
     print("Type: shoot / left -> HOLD left mouse")

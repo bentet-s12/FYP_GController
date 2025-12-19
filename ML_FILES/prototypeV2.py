@@ -180,6 +180,7 @@ def load_actions_from_profile_json(profile_path: str):
             name = a.get("name")
             key = a.get("key_pressed")
             input_type = a.get("input_type")
+            key_type = a.get("key_type")
 
             # skip empty/default placeholders
             if not name or name == "default":
@@ -187,7 +188,7 @@ def load_actions_from_profile_json(profile_path: str):
             if not key or not input_type:
                 continue
 
-            action_map[name] = Actions(name, key, input_type)
+            action_map[name] = Actions(name, key, input_type, key_type)
 
         print(f"[PROFILE] Loaded {len(action_map)} actions from {os.path.basename(profile_path)}: {list(action_map.keys())}")
         return action_map

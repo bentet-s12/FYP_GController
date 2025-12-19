@@ -9,9 +9,9 @@
     },
     {
       "name": "hold",
-      "key_pressed": "w",
+      "key_pressed": "left",
       "input_type": "Hold",
-      "key_type": "Keyboard"
+      "key_type": "Mouse"
     },
     {
       "name": "default",
@@ -23,6 +23,66 @@
       "name": "shoot_hold",
       "key_pressed": "left",
       "input_type": "Hold",
+      "key_type": "Mouse"
+    },
+    {
+      "name": "Movement_Left_A",
+      "key_pressed": "a",
+      "input_type": "Hold",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "Movement_Forward_W",
+      "key_pressed": "w",
+      "input_type": "Hold",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "Movement_Backwards_S",
+      "key_pressed": "s",
+      "input_type": "Hold",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "Movement_Right_D",
+      "key_pressed": "d",
+      "input_type": "Hold",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "left_Arrow",
+      "key_pressed": "left",
+      "input_type": "Click",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "Jump_Space",
+      "key_pressed": "space",
+      "input_type": "Click",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "up_Arrow",
+      "key_pressed": "up",
+      "input_type": "Click",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "right_arrow",
+      "key_pressed": "right",
+      "input_type": "Click",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "down_arrow",
+      "key_pressed": "down",
+      "input_type": "Click",
+      "key_type": "Keyboard"
+    },
+    {
+      "name": "CLICK",
+      "key_pressed": "left",
+      "input_type": "Click",
       "key_type": "Mouse"
     }
   ]
