@@ -71,6 +71,9 @@ class ProfileFileStore:
                 data["Profile_ID"] = str(profile_id)
             if "Actions" not in data or not isinstance(data["Actions"], list):
                 data["Actions"] = []
+            for a in data["Actions"]:
+                if isinstance(a, dict) and "key_type" not in a:
+                    a["key_type"] = "Keyboard" 
             return data
         except Exception as e:
             print(f"[ERROR] Failed to read profile file for {profile_id}: {e}")
@@ -93,7 +96,7 @@ class ProfileFileStore:
             self.save_profile(profile_id, data)
         return data
 
-    def upsert_action(self, profile_id: str, name: str, key_pressed, input_type):
+    def upsert_action(self, profile_id: str, name: str, key_pressed, input_type, key_type):
         """
         Overwrite action if same 'name' exists, else append.
         """
@@ -112,10 +115,16 @@ class ProfileFileStore:
             if isinstance(a, dict) and a.get("name") == name:
                 a["key_pressed"] = key_pressed
                 a["input_type"] = it
+                a["key_type"] = key_type
                 updated = True
 
         if not updated:
-            actions.append({"name": name, "key_pressed": key_pressed, "input_type": it})
+            actions.append({
+                "name": name,
+                "key_pressed": key_pressed,
+                "input_type": it,
+                "key_type": key_type
+            })
 
         data["Actions"] = actions
         self.save_profile(profile_id, data)
@@ -158,6 +167,7 @@ class ProfileFileStore:
             if isinstance(a, dict) and a.get("name") == new_name:
                 a["key_pressed"] = old_action.get("key_pressed")
                 a["input_type"] = old_action.get("input_type")
+                a["key_type"] = old_action.get("key_type")
                 found_new = True
 
         actions = [a for a in actions if not (isinstance(a, dict) and a.get("name") == old_name)]
@@ -447,11 +457,17 @@ def main():
                 continue
 
             key = input("Enter key_pressed (e.g. w, space, left): ").strip()
-            raw_type = input("Enter input_type (click / hold): ").strip().lower()
-            if raw_type not in ("click", "hold"):
+            raw_type = input("Enter input_type (click / hold / D_Click): ").strip().lower()
+            if raw_type not in ("click", "hold" , "D_Click"):
                 print("Invalid input_type.")
                 continue
             input_type = raw_type.capitalize()
+
+            raw_key_type = input("Enter key_type (keyboard / mouse): ").strip().lower()
+            if raw_key_type not in ("keyboard", "mouse"):
+                print("Invalid key_type.")
+                continue
+            key_type = raw_key_type.capitalize()
 
             profile_id = input("Enter profile ID to save into (e.g. 1): ").strip()
             if not profile_id:
@@ -475,7 +491,7 @@ def main():
             shutil.rmtree(folder, ignore_errors=True)
 
             if ok:
-                profiles.upsert_action(profile_id, gesture_name, key, input_type)
+                profiles.upsert_action(profile_id, gesture_name, key, input_type, key_type)
                 print("[OK] Created + saved into JSON.")
 
         # -------- EDIT --------
@@ -488,8 +504,9 @@ def main():
             print("1) Name (rename) [dataset + profiles]")
             print("2) key_pressed [profiles only]")
             print("3) input_type [profiles only]")
-            print("4) Gesture dataset (re-record vectors) [dataset only]")
-            sub = input("Select (1-4): ").strip()
+            print("4) key_type [profiles only]")
+            print("5) Gesture dataset (re-record vectors) [dataset only]")
+            sub = input("Select (1-5): ").strip()
 
             if sub == "1":
                 new_name = input("Enter NEW name: ").strip()
@@ -551,6 +568,30 @@ def main():
                 print("[OK] Updated input_type.")
 
             elif sub == "4":
+                new_key_type = input("Enter NEW key_type (Keyboard/Mouse): ").strip().capitalize()
+                if new_key_type not in ("Keyboard", "Mouse"):
+                    print("Invalid key_type.")
+                    continue
+
+                confirm = input("Type 'YES' to apply to ALL profiles containing this gesture: ").strip()
+                if confirm != "YES":
+                    continue
+
+                for pid in profiles.list_profile_ids():
+                    data = profiles.load_profile(pid)
+                    if data is None:
+                        continue
+                    changed = False
+                    for a in data.get("Actions", []):
+                        if isinstance(a, dict) and a.get("name") == gesture_name:
+                            a["key_type"] = new_key_type
+                            changed = True
+                    if changed:
+                        profiles.save_profile(pid, data)
+
+                print("[OK] Updated key_type.")
+
+            elif sub == "5":
                 confirm = input(f"Type 'YES' to re-record and REPLACE dataset vectors for '{gesture_name}': ").strip()
                 if confirm != "YES":
                     continue

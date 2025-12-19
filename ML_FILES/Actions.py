@@ -42,6 +42,9 @@ class Actions:
     def getInputType(self):
         return self._input_type
 
+    def getKeyType(self):
+        return self._key_pressed
+
     # ----- Setters (keep your original naming too) -----
     def setName(self, newName):
         self._name = newName
