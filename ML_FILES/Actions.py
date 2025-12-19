@@ -4,10 +4,11 @@ import time
 
 
 class Actions:
-    def __init__(self, name, key_pressed=None, input_type=None):
+    def __init__(self, name, key_pressed=None, input_type=None, key_type=None):
         self._name = name
         self._key_pressed = key_pressed
         self._input_type = input_type  # "Click" or "Hold"
+        self._key_type = key_type
 
         self._hold_flag = False
         self._is_holding = False
@@ -16,12 +17,21 @@ class Actions:
 
     # ----- Serialization -----
     def toDict(self):
-        return {"name": self._name, "key_pressed": self._key_pressed, "input_type": self._input_type}
+        return {
+            "name": self._name,
+            "key_pressed": self._key_pressed,
+            "input_type": self._input_type,
+            "key_type": self._key_type
+        }
 
     @staticmethod
     def fromDict(d):
-        return Actions(name=d.get("name"), key_pressed=d.get("key_pressed"), input_type=d.get("input_type"))
-
+        return Actions(
+            name=d.get("name"),
+            key_pressed=d.get("key_pressed"),
+            input_type=d.get("input_type"),
+            key_type=d.get("key_type")
+        )
     # ----- Getters -----
     def getName(self):
         return self._name
@@ -39,13 +49,12 @@ class Actions:
     def SetKey(self, newKey):
         self._key_pressed = newKey
 
+    def SetKeyType(self, newKeyType):
+        self._key_type = newKeyType
+
     def SetDuration(self, newDuration):
         self._input_type = newDuration
 
-    # ----- Internal helpers -----
-    @staticmethod
-    def _is_mouse_button(key: str) -> bool:
-        return key in ("left", "right", "middle")
 
     def _token_matches_this_action(self, token) -> bool:
         """
@@ -69,7 +78,7 @@ class Actions:
 
         # Press down ONCE
         try:
-            if self._is_mouse_button(key):
+            if self._key_type == "Mouse":
                 pydirectinput.mouseDown(button=key)
             else:
                 pydirectinput.keyDown(key)
@@ -84,7 +93,7 @@ class Actions:
         finally:
             # Release ONCE
             try:
-                if self._is_mouse_button(key):
+                if self._key_type == "Mouse":
                     pydirectinput.mouseUp(button=key)
                 else:
                     pydirectinput.keyUp(key)
@@ -108,7 +117,7 @@ class Actions:
             return
 
         try:
-            if self._is_mouse_button(key):
+            if self._key_type == "Mouse":
                 pydirectinput.mouseUp(button=key)
             else:
                 pydirectinput.keyUp(key)
@@ -136,9 +145,21 @@ class Actions:
 
         # --- CLICK ---
         if self._input_type == "Click":
-            if self._is_mouse_button(key):
+            if self._key_type == "Mouse":
                 pydirectinput.click(button=key)
             else:
+                pydirectinput.press(key)
+            return
+
+         # --- DOUBLE CLICK ---
+        if self._input_type == "D_Click":
+            if self._key_type == "Mouse":
+                pydirectinput.click(button=key)
+                time.sleep(0.04)
+                pydirectinput.click(button=key)
+            else:
+                pydirectinput.press(key)
+                time.sleep(0.04)
                 pydirectinput.press(key)
             return
 
@@ -156,17 +177,27 @@ class Actions:
 
 if __name__ == "__main__":
     # Quick manual test:
-    action_hold = Actions("hold_w", "w", "Hold")
-    action_click = Actions("jump", "space", "Click")
-    action_mouse = Actions("shoot", "left", "Click")
 
-    print("Type: hold_w / w / jump / space / shoot / left")
-    print("Type: stop to stop holds")
+    # Keyboard hold
+    action_hold = Actions("hold_w", "w", "Hold", key_type="Keyboard")
+
+    # Keyboard click
+    action_click = Actions("jump", "space", "Click", key_type="Keyboard")
+
+    # Mouse HOLD (left mouse button)
+    action_mouse = Actions("shoot", "left", "Hold", key_type="Keyboard")
+
+    print("Type: hold_w / w  -> hold W")
+    print("Type: shoot / left -> HOLD left mouse")
+    print("Type: jump / space -> press space")
+    print("Type: stop -> stop all holds")
 
     while True:
         cmd = input("> ").strip()
+
         if cmd == "stop":
             action_hold.stopHold()
+            action_mouse.stopHold()
             continue
 
         for a in (action_hold, action_click, action_mouse):
