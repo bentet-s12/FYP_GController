@@ -84,6 +84,12 @@
       "key_pressed": "left",
       "input_type": "Click",
       "key_type": "Mouse"
+    },
+    {
+      "name": "OPEN_INVENTORY",
+      "key_pressed": "e",
+      "input_type": "Click",
+      "key_type": "Keyboard"
     }
   ]
 }
