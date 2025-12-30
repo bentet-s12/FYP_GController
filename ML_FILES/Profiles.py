@@ -1,11 +1,13 @@
 from Actions import Actions
+from GestureList import GestureList
 import json
 import os
 
 class Profile:
-    def __init__(self, Profile_ID, ActionList=None):
+    def __init__(self, Profile_ID, ActionList=None, gesture_file="GestureList.json"):
         self._Profile_ID = Profile_ID
         self._ActionList = ActionList if ActionList is not None else []
+        self.Glist = GestureList(filename=gesture_file)
 
 
     @staticmethod
@@ -46,9 +48,20 @@ class Profile:
         return self._ActionList
 
     def addAction(self, action):
-        self._ActionList.append(action)
-        self.writeFile("profile_" + self._Profile_ID + ".json")
-        return
+        for existing in self._ActionList:
+            if existing.getGName() == action.getGName():
+                print(f"[Error] Gesture is already bound to an action.")
+                return False
+        
+        if action.getGName() in self.Glist.getList():
+            self._ActionList.append(action)
+            self.writeFile("profile_" + self._Profile_ID + ".json")
+            return True
+            
+        else:
+            print(f"[Error] Gesture does not exist.")
+            return False
+        
 
     def getAction(self, actionName):
         for action in self._ActionList:

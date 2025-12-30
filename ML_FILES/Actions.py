@@ -4,8 +4,9 @@ import time
 
 
 class Actions:
-    def __init__(self, name, key_pressed=None, input_type=None, key_type=None):
+    def __init__(self, name, G_name, key_pressed=None, input_type=None, key_type=None):
         self._name = name
+        self._G_name = G_name
         self._key_pressed = key_pressed
         self._input_type = input_type  # "Click" or "Hold"
         self._key_type = key_type
@@ -19,6 +20,7 @@ class Actions:
     def toDict(self):
         return {
             "name": self._name,
+            "G_name": self._G_name,
             "key_pressed": self._key_pressed,
             "input_type": self._input_type,
             "key_type": self._key_type
@@ -28,6 +30,7 @@ class Actions:
     def fromDict(d):
         return Actions(
             name=d.get("name"),
+            G_name=d.get("G_name"),
             key_pressed=d.get("key_pressed"),
             input_type=d.get("input_type"),
             key_type=d.get("key_type")
@@ -35,6 +38,9 @@ class Actions:
     # ----- Getters -----
     def getName(self):
         return self._name
+    
+    def getGName(self):
+        return self._G_name
 
     def getKeyPressed(self):
         return self._key_pressed
@@ -43,11 +49,14 @@ class Actions:
         return self._input_type
 
     def getKeyType(self):
-        return self._key_pressed
+        return self._key_type
 
-    # ----- Setters (keep your original naming too) -----
+    # ----- Setters 
     def setName(self, newName):
         self._name = newName
+
+    def setGName(self, newGName):
+        self._G_name = newGName
 
     def SetKey(self, newKey):
         self._key_pressed = newKey
@@ -68,7 +77,7 @@ class Actions:
         """
         if token is None:
             return True
-        return token == self._name or token == self._key_pressed
+        return token == self._G_name or token == self._key_pressed or token == self._name
 
     # ----- HOLD THREAD -----
     def _hold_loop(self):
@@ -136,7 +145,7 @@ class Actions:
 
         # --- bypass token check if None ---
         if token is not None:
-            if token != self._name and token != self._key_pressed:
+            if token != self._G_name and token != self._key_pressed and token != self._name:
                 return  # token does not match this action
 
         key = self._key_pressed
