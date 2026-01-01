@@ -62,7 +62,7 @@ class Profile:
             print(f"[Error] Gesture does not exist.")
             return False
         
-
+#tweak to use g_name instead
     def getAction(self, actionName):
         for action in self._ActionList:
             if action.compareName(actionName):

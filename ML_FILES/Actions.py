@@ -30,7 +30,7 @@ class Actions:
     def fromDict(d):
         return Actions(
             name=d.get("name"),
-            G_name=d.get("G_name"),
+            G_name=d.get("G_name"),  
             key_pressed=d.get("key_pressed"),
             input_type=d.get("input_type"),
             key_type=d.get("key_type")
@@ -67,7 +67,10 @@ class Actions:
     def SetDuration(self, newDuration):
         self._input_type = newDuration
 
-
+    def compareName(self, Gname):
+        if self._G_name == Gname:
+            return self
+        
     def _token_matches_this_action(self, token) -> bool:
         """
         token can be:
