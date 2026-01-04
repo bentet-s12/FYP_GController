@@ -9,3 +9,8 @@ The standard number of images per gesture is 200, but you can change it in defau
 The user can run the program by calling GestureControllerApp class from prototype.py.
 
 In custom_manager, the user can create, edit and delete their custom gestures.
+
+changelog:
+do pip install screeninfo for the new imports.
+custom_manager now has create gesture, rename gesture and delete gesture for gesturelist, and add/update profile mapping and remove profile mapping for creating gesture mapping (key, key type, gesture)
+for prototypev2, i added a disabled mode for cursor and a monitor detector. If you have split screen, it should prompt you to pick a monitor to use.
