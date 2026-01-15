@@ -411,6 +411,7 @@ class ClickTesterGUI:
         tk.Button(frame_hand, text="Right", command=lambda: self.app.set_hand_mode("right")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_hand, text="Left", command=lambda: self.app.set_hand_mode("left")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_hand, text="Auto", command=lambda: self.app.set_hand_mode("auto")).pack(side=tk.LEFT, padx=4)
+        tk.Button(frame_hand, text="MultiKB", command=lambda: self.app.set_hand_mode("multi_keyboard")).pack(side=tk.LEFT, padx=4)
 
         # Mouse mode buttons
         frame_mouse = tk.Frame(self.root)
@@ -527,8 +528,13 @@ class GestureControllerApp:
 
         self.gui = ClickTesterGUI(self)
 
-        self.prev_gesture = "none"
-        self.prev_hold_action = None
+        # Per-hand state (for multi-keyboard mode and also safe for normal modes)
+        self.prev_gesture_by_hand = {"Left": "none", "Right": "none"}
+        self.prev_hold_action_by_hand = {"Left": None, "Right": None}
+
+        # Optional: in multi_keyboard mode, only allow Keyboard actions (recommended)
+        self.MULTI_KEYBOARD_ONLY = True
+
 
     def set_hand_mode(self, mode: str):
         self.hand_mode = mode
@@ -575,6 +581,58 @@ class GestureControllerApp:
         y = max(self.screen_y, min(y, self.screen_y + self.screen_h - 1))
 
         pyautogui.moveTo(x, y)
+
+     # ---------- keyboard helpers ----------
+
+    def _process_action_for_hand(self, hand_label: str, current_gesture: str):
+        """
+        Execute mapped action for a given hand label ("Left"/"Right") based on current_gesture.
+        Supports simultaneous holds on both hands.
+        """
+        prev_gesture = self.prev_gesture_by_hand.get(hand_label, "none")
+        prev_hold = self.prev_hold_action_by_hand.get(hand_label)
+
+        mapped_action_obj = self.action_map.get(current_gesture) if current_gesture != "none" else None
+
+        # Optional restriction: MultiKB should only drive keyboard actions
+        if self.hand_mode == "multi_keyboard" and self.MULTI_KEYBOARD_ONLY and mapped_action_obj is not None:
+            if mapped_action_obj.getKeyType() != "Keyboard":
+                mapped_action_obj = None
+
+        # Stop hold if gesture changes/disappears/unmapped
+        if prev_hold is not None:
+            if current_gesture == "none" or mapped_action_obj is None or current_gesture != prev_hold.getName():
+                prev_hold.stopHold()
+                prev_hold = None
+
+        fired_text = "NO"
+        mapped_text = "None"
+
+        if mapped_action_obj is not None:
+            input_type = mapped_action_obj.getInputType()
+            key = mapped_action_obj.getKeyPressed()
+            mapped_text = f"{current_gesture} -> {key} ({input_type})"
+
+            # CLICK / DOUBLE CLICK fires once on transition
+            if input_type in ("Click", "D_Click"):
+                if current_gesture != prev_gesture:
+                    print("FIRING:", current_gesture, input_type, key)
+                    mapped_action_obj.useAction(mapped_action_obj.getName())
+                    fired_text = "YES" if input_type == "Click" else "D_CLICK"
+
+            # HOLD repeats safely
+            elif input_type == "Hold":
+                print("FIRING:", current_gesture, input_type, key)
+                mapped_action_obj.useAction(mapped_action_obj.getName())
+                self.prev_hold_action = mapped_action_obj
+                fired_text = "HOLD"
+
+
+        # Save state back
+        self.prev_gesture_by_hand[hand_label] = current_gesture
+        self.prev_hold_action_by_hand[hand_label] = prev_hold
+
+        return mapped_text, fired_text
 
 
     # ---------- main loop ----------
@@ -624,34 +682,49 @@ class GestureControllerApp:
                         best_point_hand = (label, hand_lm, pred, conf)
 
             # decide pointer vs action based on mode
-            if self.hand_mode == "right":
-                for (label, hand_lm, pred, conf) in detected:
-                    if label == "Right":
-                        pointer_hand = (label, hand_lm, pred, conf)
-                    elif label == "Left":
-                        action_hand = (label, hand_lm, pred, conf)
+            action_hands = []  # list of tuples (label, hand_lm, pred, conf)
 
-            elif self.hand_mode == "left":
-                for (label, hand_lm, pred, conf) in detected:
-                    if label == "Left":
-                        pointer_hand = (label, hand_lm, pred, conf)
-                    elif label == "Right":
-                        action_hand = (label, hand_lm, pred, conf)
+            if self.hand_mode == "multi_keyboard":
+                # BOTH hands become action hands (simultaneous keyboard)
+                action_hands = detected[:]  # all detected hands are action sources
+                pointer_hand = None         # no pointer hand in this mode by default
 
-            else:  # auto
-                if best_point_hand is not None:
-                    pointer_hand = best_point_hand
-                    # action is the other hand if present
-                    for item in detected:
-                        if item is not pointer_hand:
-                            action_hand = item
-                            break
+            else:
+                # existing single pointer/action logic
+                if self.hand_mode == "right":
+                    for (label, hand_lm, pred, conf) in detected:
+                        if label == "Right":
+                            pointer_hand = (label, hand_lm, pred, conf)
+                        elif label == "Left":
+                            action_hand = (label, hand_lm, pred, conf)
+
+                elif self.hand_mode == "left":
+                    for (label, hand_lm, pred, conf) in detected:
+                        if label == "Left":
+                            pointer_hand = (label, hand_lm, pred, conf)
+                        elif label == "Right":
+                            action_hand = (label, hand_lm, pred, conf)
+
+                else:  # auto
+                    if best_point_hand is not None:
+                        pointer_hand = best_point_hand
+                        # action is the other hand if present
+                        for item in detected:
+                            if item is not pointer_hand:
+                                action_hand = item
+                                break
+                    else:
+                        # fallback: first is pointer, second is action
+                        if len(detected) >= 1:
+                            pointer_hand = detected[0]
+                        if len(detected) >= 2:
+                            action_hand = detected[1]
+
+                # convert single action_hand to list
+                if action_hand:
+                    action_hands = [action_hand]
                 else:
-                    # fallback: first is pointer, second is action
-                    if len(detected) >= 1:
-                        pointer_hand = detected[0]
-                    if len(detected) >= 2:
-                        action_hand = detected[1]
+                    action_hands = []
 
             # ---- pointer movement ----
             if pointer_hand:
@@ -659,72 +732,58 @@ class GestureControllerApp:
                 tip = hand_lm.landmark[8]  # index fingertip
 
                 if self.mouse_mode == "DISABLED":
-                    # Do not move the mouse at all in this mode
                     pass
                 elif self.mouse_mode == "CURSOR":
                     self._cursor_move(tip.x, tip.y)
                 else:
-                    # CAMERA mode joystick-like (relative)
                     dx = (tip.x - 0.5) * self._joy_gain
                     dy = (tip.y - 0.5) * self._joy_gain
-
                     dx = self._apply_deadzone(dx)
                     dy = self._apply_deadzone(dy)
-
                     self._camera_move(dx, dy)
 
-                # draw red dot on fingertip (still useful even if disabled)
+                # draw red dot on fingertip
                 h, w = frame.shape[:2]
                 cx, cy = int(tip.x * w), int(tip.y * h)
                 cv2.circle(frame, (cx, cy), 8, (0, 0, 255), -1)
 
+            # ---- action execution (MULTI-HAND for multi_keyboard) ----
+            # Stop holds for hands that disappeared
+            seen_labels = set([lbl for (lbl, _, _, _) in action_hands])
 
-            # ---- action execution (ONLY action hand) ----
-            current_gesture = "none"
-            if action_hand:
-                _, _, pred, conf = action_hand
+            for lbl in ["Left", "Right"]:
+                if lbl not in seen_labels:
+                    prev_hold = self.prev_hold_action_by_hand.get(lbl)
+                    if prev_hold is not None:
+                        prev_hold.stopHold()
+                    self.prev_hold_action_by_hand[lbl] = None
+                    self.prev_gesture_by_hand[lbl] = "none"
+
+            mapped_texts = []
+            fired_texts = []
+
+            for (label, _, pred, conf) in action_hands:
                 current_gesture = pred if conf >= GESTURE_CONF_THRESHOLD else "none"
+                mapped_text, fired_text = self._process_action_for_hand(label, current_gesture)
 
-                # === ACTION LOOKUP (DIRECT JSON MAP) ===
-                mapped_action_obj = self.action_map.get(current_gesture)
+                mapped_texts.append(f"{label}: {mapped_text}")
+                fired_texts.append(f"{label}: {fired_text}")
 
-                # ---- FORCE STOP HOLD when gesture is none OR changed OR unmapped ----
-                if self.prev_hold_action is not None:
-                    if current_gesture == "none" or mapped_action_obj is None or current_gesture != self.prev_hold_action.getName():
-                        self.prev_hold_action.stopHold()
-                        self.prev_hold_action = None
-
-                fired_text = "NO"
-                mapped_text = "None"
-
-                if current_gesture != "none" and mapped_action_obj is not None:
-                    input_type = mapped_action_obj.getInputType()
-                    key = mapped_action_obj.getKeyPressed()
-                    mapped_text = f"{current_gesture} -> {key} ({input_type})"
-
-                    # CLICK fires once on transition
-                    if input_type == "Click":
-                        if current_gesture != self.prev_gesture:
-                            mapped_action_obj.useAction(mapped_action_obj.getName())
-                            fired_text = "YES"
-
-                    # HOLD repeats safely (Actions.py guards holding)
-                    elif input_type == "Hold":
-                        mapped_action_obj.useAction(mapped_action_obj.getName())
-                        self.prev_hold_action = mapped_action_obj
-                        fired_text = "HOLD"
-
-                self.prev_gesture = current_gesture
-
+            # UI: show both hands in multi_keyboard, else show single current gesture
+            if self.hand_mode == "multi_keyboard":
+                gL = self.prev_gesture_by_hand.get("Left", "none")
+                gR = self.prev_gesture_by_hand.get("Right", "none")
+                gesture_text = f"Gesture: L={gL} | R={gR}"
             else:
-                # no action hand -> stop any hold
-                if self.prev_hold_action is not None:
-                    self.prev_hold_action.stopHold()
-                    self.prev_hold_action = None
-                current_gesture = "none"
-                mapped_text = "None"
-                fired_text = "NO"
-                self.prev_gesture = "none"
+                # for normal modes, show the single action hand gesture
+                # (if no action hand, it'll be "none")
+                only = "none"
+                if action_hands:
+                    only = self.prev_gesture_by_hand.get(action_hands[0][0], "none")
+                gesture_text = f"Gesture: {only}"
+
+            mapped_text = " | ".join(mapped_texts) if mapped_texts else "None"
+            fired_text = " | ".join(fired_texts) if fired_texts else "NO"
 
             mon_txt = "All Screens"
             if self.monitor:
@@ -732,8 +791,7 @@ class GestureControllerApp:
 
             mode_text = f"Hand Mode: {self.hand_mode} | Mouse Mode: {self.mouse_mode} | Monitor: {mon_txt}"
 
-            gesture_text = f"Gesture: {current_gesture}"
-            # Thread-safe UI update (Tkinter must be updated from its own thread)
+            # Thread-safe UI update
             try:
                 self.gui.root.after(
                     0,
@@ -745,6 +803,7 @@ class GestureControllerApp:
                 )
             except Exception:
                 pass
+
 
 
             cv2.imshow("Gesture Controller", frame)

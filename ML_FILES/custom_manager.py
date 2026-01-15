@@ -882,8 +882,10 @@ def main():
 
         # -------- 4) ADD / UPDATE profile mapping --------
         elif choice == "4":
+            # 1) profile
             pid = choose_profile_id()
 
+            # 2) gesture (from GestureList)
             gestures = gesture_store.load()
             if not gestures:
                 print("[GestureList] No gestures available. Add some first.")
@@ -897,26 +899,57 @@ def main():
             if sel.isdigit() and 1 <= int(sel) <= len(gestures):
                 gesture = gestures[int(sel) - 1]
             else:
-                gesture = sel
+                gesture = sel.strip()
 
             if gesture not in gestures:
-                print("[GestureList] Invalid gesture (not in GestureList.json).")
+                print("[ERROR] Invalid gesture (not in GestureList.json). Returning to main menu.")
                 continue
 
-            key_pressed = input("Enter key_pressed (e.g. w, space, left): ").strip()
-            raw_type = input("Enter input_type (click / hold): ").strip().lower()
-            if raw_type not in ("click", "hold"):
-                print("Invalid input_type.")
-                continue
-            input_type = "Click" if raw_type == "click" else "Hold"
-
+            # 3) key_type
             raw_key_type = input("Enter key_type (keyboard / mouse): ").strip().lower()
             if raw_key_type not in ("keyboard", "mouse"):
-                print("Invalid key_type.")
+                print("[ERROR] Invalid key_type. Returning to main menu.")
                 continue
             key_type = "Keyboard" if raw_key_type == "keyboard" else "Mouse"
 
+            # 4) key_pressed (validated by key_type)
+            key_pressed = input("Enter key_pressed: ").strip().lower()
+            if not key_pressed:
+                print("[ERROR] key_pressed cannot be empty. Returning to main menu.")
+                continue
+
+            # --- STRICT TYPE VALIDATION ---
+            # Mouse: ONLY allow actual mouse buttons
+            mouse_buttons = {"left", "right", "middle"}
+
+            if key_type == "Mouse":
+                if key_pressed not in mouse_buttons:
+                    print("[ERROR] Mouse key_type only allows: left, right, middle. Returning to main menu.")
+                    continue
+
+            # Keyboard: disallow mouse-only buttons that are not meaningful as keys
+            # NOTE: 'left'/'right' are VALID keyboard arrow keys, so we MUST allow them.
+            if key_type == "Keyboard":
+                if key_pressed == "middle":
+                    print("[ERROR] 'middle' is a mouse button, not a keyboard key. Returning to main menu.")
+                    continue
+                # Optional: you can add more mouse-only rejects here if needed (e.g., 'x1','x2')
+
+            # 5) input_type
+            raw_type = input("Enter input_type (click / hold / d_click): ").strip().lower()
+            if raw_type not in ("click", "hold", "d_click"):
+                print("[ERROR] Invalid input_type. Returning to main menu.")
+                continue
+
+            if raw_type == "click":
+                input_type = "Click"
+            elif raw_type == "hold":
+                input_type = "Hold"
+            else:
+                input_type = "D_Click"
+
             profiles.upsert_mapping(pid, gesture, key_pressed, input_type, key_type)
+
 
         # -------- 5) REMOVE profile mapping --------
         elif choice == "5":
