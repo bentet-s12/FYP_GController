@@ -386,27 +386,31 @@ class ClickTesterGUI:
         self.app = app
         self.root = tk.Tk()
         self.root.title("Gesture Controller Tester")
-        self.root.geometry("460x420")
+        self.root.geometry("780x620")
+        self.root.resizable(True, True)
+
+        self.main = tk.Frame(self.root)
+        self.main.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.click_count = 0
-        self.label_mode = tk.Label(self.root, text="Hand Mode: right | Mouse Mode: CAMERA", font=("Arial", 12))
+        self.label_mode = tk.Label(self.main, text="Hand Mode: right | Mouse Mode: CAMERA", font=("Arial", 12))
         self.label_mode.pack(pady=8)
 
-        self.label_gesture = tk.Label(self.root, text="Gesture: none", font=("Arial", 14))
+        self.label_gesture = tk.Label(self.main, text="Gesture: none", font=("Arial", 14))
         self.label_gesture.pack(pady=8)
 
-        self.label_mapped = tk.Label(self.root, text="Mapped: None", font=("Arial", 12))
+        self.label_mapped = tk.Label(self.main, text="Mapped: None", font=("Arial", 12))
         self.label_mapped.pack(pady=8)
 
-        self.label_fired = tk.Label(self.root, text="Fired: NO", font=("Arial", 12))
+        self.label_fired = tk.Label(self.main, text="Fired: NO", font=("Arial", 12))
         self.label_fired.pack(pady=8)
 
-        self.btn_reload = tk.Button(self.root, text="Reload Profile (r)", command=self.app.reload_profile_actions)
+        self.btn_reload = tk.Button(self.main, text="Reload Profile (r)", command=self.app.reload_profile_actions)
         self.btn_reload.pack(pady=10)
 
         # Hand mode buttons
-        frame_hand = tk.Frame(self.root)
-        frame_hand.pack(pady=6)
+        frame_hand = tk.Frame(self.main)
+        frame_hand.pack(fill="x", expand=True, pady=6)
         tk.Label(frame_hand, text="Hand Mode: ").pack(side=tk.LEFT)
         tk.Button(frame_hand, text="Right", command=lambda: self.app.set_hand_mode("right")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_hand, text="Left", command=lambda: self.app.set_hand_mode("left")).pack(side=tk.LEFT, padx=4)
@@ -414,14 +418,59 @@ class ClickTesterGUI:
         tk.Button(frame_hand, text="MultiKB", command=lambda: self.app.set_hand_mode("multi_keyboard")).pack(side=tk.LEFT, padx=4)
 
         # Mouse mode buttons
-        frame_mouse = tk.Frame(self.root)
-        frame_mouse.pack(pady=6)
+        frame_mouse = tk.Frame(self.main)
+        frame_mouse.pack(fill="x", expand=True, pady=6)
         tk.Label(frame_mouse, text="Mouse Mode: ").pack(side=tk.LEFT)
         tk.Button(frame_mouse, text="Disabled", command=lambda: self.app.set_mouse_mode("DISABLED")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_mouse, text="Camera", command=lambda: self.app.set_mouse_mode("CAMERA")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_mouse, text="Cursor", command=lambda: self.app.set_mouse_mode("CURSOR")).pack(side=tk.LEFT, padx=4)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # ---- Camera Adjustments ----
+        frame_cam = tk.LabelFrame(self.main, text="Camera")
+        frame_cam.pack(fill="x", padx=10, pady=8)
+
+        # Contrast slider
+        tk.Label(frame_cam, text="Contrast").grid(row=0, column=0, sticky="w")
+        self.contrast_var = tk.DoubleVar(value=self.app.cam_contrast)
+        tk.Scale(
+            frame_cam, from_=-0.5, to=3.0, resolution=0.05,
+            orient="horizontal", variable=self.contrast_var,
+            command=lambda _=None: self._on_contrast_change()
+        ).grid(row=0, column=1, sticky="ew", padx=8)
+
+        # Brightness slider (-100 to +100) (optional but useful)
+        tk.Label(frame_cam, text="Brightness").grid(row=1, column=0, sticky="w")
+        self.brightness_var = tk.IntVar(value=self.app.cam_brightness)
+        tk.Scale(
+            frame_cam, from_=-100, to=100, resolution=1,
+            orient="horizontal", variable=self.brightness_var,
+            command=lambda _=None: self._on_brightness_change()
+        ).grid(row=1, column=1, sticky="ew", padx=8)
+
+        # Grayscale toggle
+        self.gray_var = tk.BooleanVar(value=self.app.cam_grayscale)
+        tk.Checkbutton(
+            frame_cam, text="Grayscale",
+            variable=self.gray_var,
+            command=self._on_gray_toggle
+        ).grid(row=2, column=0, sticky="w", pady=(4,0))
+
+        # Apply to tracking toggle (advanced)
+        self.track_adj_var = tk.BooleanVar(value=self.app.cam_apply_to_tracking)
+        tk.Checkbutton(
+            frame_cam, text="Apply adjustments to tracking (advanced)",
+            variable=self.track_adj_var,
+            command=self._on_track_adj_toggle
+        ).grid(row=2, column=1, sticky="w", pady=(4,0))
+
+        frame_cam.columnconfigure(1, weight=1)
+
+        self.root.update_idletasks()
+        self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
+
+
 
     def on_close(self):
         self.app.running = False
@@ -437,6 +486,19 @@ class ClickTesterGUI:
         self.label_gesture.config(text=gesture_text)
         self.label_mapped.config(text=mapped_text)
         self.label_fired.config(text=fired_text)
+
+    def _on_contrast_change(self):
+        self.app.cam_contrast = float(self.contrast_var.get())
+
+    def _on_brightness_change(self):
+        self.app.cam_brightness = int(self.brightness_var.get())
+
+    def _on_gray_toggle(self):
+        self.app.cam_grayscale = bool(self.gray_var.get())
+
+    def _on_track_adj_toggle(self):
+        self.app.cam_apply_to_tracking = bool(self.track_adj_var.get())
+
 
 # =================================================
 #   MONITOR DETECTION
@@ -479,6 +541,12 @@ class GestureControllerApp:
         # modes
         self.hand_mode = "right"   # right/left/auto
         self.mouse_mode = "DISABLED" # DISABLED/CAMERA/CURSOR
+
+        # Camera adjustment settings (GUI-controlled)
+        self.cam_contrast = 1.0      # 0.5 .. 3.0
+        self.cam_brightness = 0      # -100 .. +100
+        self.cam_grayscale = False
+        self.cam_apply_to_tracking = False  # recommended False
 
         # joystick (CAMERA mode)
         self._joy_gain = 70.0
@@ -534,7 +602,6 @@ class GestureControllerApp:
 
         # Optional: in multi_keyboard mode, only allow Keyboard actions (recommended)
         self.MULTI_KEYBOARD_ONLY = True
-
 
     def set_hand_mode(self, mode: str):
         self.hand_mode = mode
@@ -633,6 +700,23 @@ class GestureControllerApp:
         self.prev_hold_action_by_hand[hand_label] = prev_hold
 
         return mapped_text, fired_text
+    
+    def _apply_camera_adjustments(self, frame_bgr):
+        """
+        Apply brightness/contrast and optional grayscale for display/tracking.
+        Returns BGR frame.
+        """
+        # Contrast/Brightness
+        # alpha = contrast, beta = brightness
+        out = cv2.convertScaleAbs(frame_bgr, alpha=float(self.cam_contrast), beta=int(self.cam_brightness))
+
+        # Grayscale (convert back to BGR so downstream code (imshow/drawing) works)
+        if self.cam_grayscale:
+            gray = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
+            out = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+        return out
+
 
 
     # ---------- main loop ----------
@@ -644,8 +728,19 @@ class GestureControllerApp:
                 continue
 
             frame = cv2.flip(frame, 1)
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # Decide what frame MediaPipe should see
+            if self.cam_apply_to_tracking:
+                frame_for_mp = self._apply_camera_adjustments(frame.copy())
+            else:
+                frame_for_mp = frame
+
+            frame_rgb = cv2.cvtColor(frame_for_mp, cv2.COLOR_BGR2RGB)
             res = self.hands.process(frame_rgb)
+
+            # Decide what you want to display
+            frame_display = self._apply_camera_adjustments(frame.copy())
+
 
             pointer_hand = None
             action_hand = None
@@ -743,9 +838,9 @@ class GestureControllerApp:
                     self._camera_move(dx, dy)
 
                 # draw red dot on fingertip
-                h, w = frame.shape[:2]
+                h, w = frame_display.shape[:2]
                 cx, cy = int(tip.x * w), int(tip.y * h)
-                cv2.circle(frame, (cx, cy), 8, (0, 0, 255), -1)
+                cv2.circle(frame_display, (cx, cy), 8, (0, 0, 255), -1)
 
             # ---- action execution (MULTI-HAND for multi_keyboard) ----
             # Stop holds for hands that disappeared
@@ -806,7 +901,7 @@ class GestureControllerApp:
 
 
 
-            cv2.imshow("Gesture Controller", frame)
+            cv2.imshow("Gesture Controller", frame_display)
 
             k = cv2.waitKey(1) & 0xFF
             if k == ord('q'):
