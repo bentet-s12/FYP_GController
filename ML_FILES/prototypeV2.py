@@ -685,7 +685,6 @@ class GestureControllerApp:
             # CLICK / DOUBLE CLICK fires once on transition
             if input_type in ("Click", "D_Click"):
                 if current_gesture != prev_gesture:
-                    print("FIRING:", current_gesture, input_type, key)
                     mapped_action_obj.useAction(mapped_action_obj.getName())
                     fired_text = "YES" if input_type == "Click" else "D_CLICK"
 
