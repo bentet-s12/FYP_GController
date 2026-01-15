@@ -15,7 +15,6 @@ from screeninfo import get_monitors
 
 
 from Actions import Actions  # your pydirectinput-based Actions.py
-
 # ================== PATH CONFIG ==================
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -669,6 +668,9 @@ class GestureControllerApp:
         # Stop hold if gesture changes/disappears/unmapped
         if prev_hold is not None:
             if current_gesture == "none" or mapped_action_obj is None or current_gesture != prev_hold.getName():
+                print("[STOP]", hand_label, "cur=", current_gesture,
+                "prev_hold_name=", prev_hold.getName(),
+                "mapped=", None if mapped_action_obj is None else mapped_action_obj.getInputType(), flush=True)
                 prev_hold.stopHold()
                 prev_hold = None
 
@@ -689,10 +691,13 @@ class GestureControllerApp:
 
             # HOLD repeats safely
             elif input_type == "Hold":
-                print("FIRING:", current_gesture, input_type, key)
+                if prev_hold is None:
+                    print("###HOLD_START###", hand_label, current_gesture, key, flush=True)
+
                 mapped_action_obj.useAction(mapped_action_obj.getName())
-                self.prev_hold_action = mapped_action_obj
+                prev_hold = mapped_action_obj
                 fired_text = "HOLD"
+
 
 
         # Save state back
