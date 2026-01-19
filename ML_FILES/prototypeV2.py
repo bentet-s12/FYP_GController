@@ -1071,7 +1071,7 @@ class GestureControllerApp:
 
         # camera thread cleanup
         try:
-            cap.release()
+            self.cap.release()
         except Exception:
             pass
 
