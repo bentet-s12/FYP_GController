@@ -1,6 +1,7 @@
 [
     "thumbs_up",
-    "wave",
     "thumbs_down",
-    "ok"
+    "wave",
+    "thumbs_left",
+    "thumbs_right"
 ]

@@ -9,6 +9,9 @@ import tempfile
 import json
 import glob
 import time
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+
 
 
 # ===================== PATH CONFIG =====================
@@ -399,17 +402,31 @@ class ProfileFileStore:
 # ===================== VIDEO + COLLECTION =====================
 
 class CustomGestureCollector:
-    def __init__(self, dataset_size=200, open_after=False):
+    def __init__(self, dataset_size=200, open_after=False, model_path=None):
         self.dataset_size = dataset_size
         self.open_after = open_after
 
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
+        # ---- MediaPipe Tasks model path ----
+        # Put the model at: <your_script_dir>/models/hand_landmarker.task
+        if model_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            model_path = os.path.join(base_dir, "data", "models", "hand_landmarker.task")
+        self.model_path = model_path
+
+        # ---- Create HandLandmarker (VIDEO mode) ----
+        # VIDEO mode lets us call detect_for_video with a timestamp each frame.
+        base_options = python.BaseOptions(model_asset_path=self.model_path)
+        options = vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.VIDEO,
+            num_hands=1,
+            min_hand_detection_confidence=0.5,
+            min_hand_presence_confidence=0.5,
+            min_tracking_confidence=0.5,
         )
+        self.landmarker = vision.HandLandmarker.create_from_options(options)
+        self._last_ts_ms = -1
+
 
     def open_folder(self, path):
         try:
@@ -423,9 +440,12 @@ class CustomGestureCollector:
         except Exception as e:
             print("Could not open folder:", e)
 
-    def landmarks_to_feature_vector(self, lm):
+    def landmarks_to_feature_vector(self, lm_list):
+        """
+        lm_list: a list of 21 landmarks, each having .x and .y (Tasks API provides these)
+        """
         coords = []
-        for p in lm.landmark:
+        for p in lm_list:
             coords.append([p.x, p.y])
         coords = np.array(coords, dtype=np.float32)
         wrist = coords[0].copy()
@@ -435,22 +455,18 @@ class CustomGestureCollector:
         return coords.reshape(-1)
 
     def collect_gesture(self, gesture_name: str, output_folder: str,
-                        capture_interval: float = 0.08,
-                        require_hand: bool = True) -> bool:
+                    capture_interval: float = 0.1,
+                    require_hand: bool = True) -> bool:
         """
-        AUTO-CAPTURE (ARMED BY SPACE):
+        TWO-PHASE AUTO-CAPTURE (SPACE-ARMED):
+        - Starts paused.
+        - Captures LEFT hand (dataset_size/2 samples) at capture_interval spacing.
+        - When LEFT phase completes, auto-pauses and asks for RIGHT hand.
+        - Press SPACE again to start RIGHT phase.
+        - Q cancels: deletes samples in output_folder and returns False.
 
-        - Starts paused (NOT capturing).
-        - SPACE toggles capture ON/OFF (pause/unpause).
-        - Q cancels:
-            * deletes any saved samples in output_folder
-            * returns False (so caller does NOT save dataset / gesturelist)
-        - Saves one sample every capture_interval seconds while capturing AND hand detected.
-
-        Returns True only if dataset_size samples were collected.
+        Returns True only if dataset_size samples are collected (LEFT + RIGHT).
         """
-
-        import time  # safe even if already imported
 
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
@@ -458,15 +474,22 @@ class CustomGestureCollector:
             return False
 
         os.makedirs(output_folder, exist_ok=True)
-        saved = 0
 
-        capturing = False  # start paused (armed by SPACE)
-        last_save_t = time.perf_counter()
+        # ---- Two-phase settings ----
+        total_target = int(self.dataset_size)
+        per_hand = total_target // 2  # 200 -> 100
+        phase = "LEFT"                # "LEFT" then "RIGHT"
+        saved_phase = {"LEFT": 0, "RIGHT": 0}
 
-        print("\n[COLLECT] AUTO-CAPTURE (SPACE to start/pause)")
+        capturing = False  # SPACE toggles capturing
+        last_save_t = 0.0  # last time we successfully saved a sample
+
+        print("\n[COLLECT] TWO-PHASE AUTO-CAPTURE")
         print("  SPACE -> start / pause capture")
         print("  Q     -> cancel (saves NOTHING)\n")
-        print(f"[COLLECT] Target: {self.dataset_size} samples | Interval: {capture_interval:.3f}s\n")
+        print(f"[COLLECT] Target: LEFT {per_hand} + RIGHT {per_hand} = {total_target} samples")
+        print(f"[COLLECT] Interval: {capture_interval:.2f}s\n")
+        print("[COLLECT] Show your LEFT hand first. Press SPACE to start.\n")
 
         def cleanup_folder():
             try:
@@ -479,91 +502,155 @@ class CustomGestureCollector:
             except Exception:
                 pass
 
+        # IMPORTANT: timestamps must be monotonically increasing across runs
+        # Make sure __init__ has: self._last_ts_ms = -1
+        if not hasattr(self, "_last_ts_ms"):
+            self._last_ts_ms = -1
+
         while True:
             ret, frame = cap.read()
             if not ret:
                 continue
 
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            res = self.hands.process(frame_rgb)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
 
-            hand_ok = res.multi_hand_landmarks is not None
+            # ---- monotonic timestamp ----
+            timestamp_ms = int(time.perf_counter() * 1000)
+            if timestamp_ms <= self._last_ts_ms:
+                timestamp_ms = self._last_ts_ms + 1
+            self._last_ts_ms = timestamp_ms
 
-            # overlay text
+            try:
+                result = self.landmarker.detect_for_video(mp_image, timestamp_ms)
+            except Exception as e:
+                print("[MediaPipe Tasks] detect_for_video failed:", e)
+                cleanup_folder()
+                cap.release()
+                cv2.destroyAllWindows()
+                return False
+
+            hand_ok = bool(result.hand_landmarks) and len(result.hand_landmarks) > 0
+
+            # Handedness from Tasks
+            handed = None  # "Left" or "Right"
+            if hand_ok and getattr(result, "handedness", None):
+                try:
+                    handed = result.handedness[0][0].category_name  # "Left" or "Right"
+                except Exception:
+                    handed = None
+
+            want = "Left" if phase == "LEFT" else "Right"
+            match_ok = (hand_ok and handed == want)
+
+            total_saved = saved_phase["LEFT"] + saved_phase["RIGHT"]
+
+            # ---- Overlay ----
             cv2.putText(frame, f"Gesture: {gesture_name}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.putText(frame, f"Saved: {saved}/{self.dataset_size}", (10, 70),
+            cv2.putText(frame, f"Phase: {phase} ({saved_phase[phase]}/{per_hand})", (10, 70),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.putText(frame, f"Hand: {'YES' if hand_ok else 'NO'}", (10, 110),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-            cv2.putText(frame, f"Capturing: {'ON' if capturing else 'OFF'} (SPACE)", (10, 150),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 2)
-            cv2.putText(frame, "Q = Cancel (saves NOTHING)", (10, 190),
+            cv2.putText(frame, f"Total: {total_saved}/{total_target}", (10, 110),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            cv2.putText(frame, f"Detected: {handed or 'None'} | Need: {want}", (10, 150),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+
+            phase_hint = ""
+            if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
+                phase_hint = "LEFT done. Press SPACE to start RIGHT."
+            elif phase == "RIGHT" and saved_phase["RIGHT"] >= per_hand:
+                phase_hint = "RIGHT done."
+
+            cv2.putText(frame, f"Capturing: {'ON' if capturing else 'OFF'} (SPACE) {phase_hint}", (10, 190),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+            cv2.putText(frame, "Q = Cancel (saves NOTHING)", (10, 230),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
-            # draw landmarks
+            # Draw landmarks
             if hand_ok:
-                for hand_lm in res.multi_hand_landmarks:
-                    for p in hand_lm.landmark:
-                        h, w = frame.shape[:2]
-                        cx, cy = int(p.x * w), int(p.y * h)
-                        cv2.circle(frame, (cx, cy), 2, (255, 0, 0), -1)
+                h, w = frame.shape[:2]
+                for p in result.hand_landmarks[0]:
+                    cx, cy = int(p.x * w), int(p.y * h)
+                    cv2.circle(frame, (cx, cy), 2, (255, 0, 0), -1)
 
             cv2.imshow("Collect Gesture Samples (AUTO)", frame)
-
             key = cv2.waitKey(1) & 0xFF
 
-            # Quit/cancel -> delete everything and return False
+            # ---- Controls ----
             if key == ord('q'):
                 cleanup_folder()
                 cap.release()
                 cv2.destroyAllWindows()
                 return False
 
-            # SPACE toggles capture ON/OFF
-            if key == 32:  # space
-                capturing = not capturing
-                # reset timer so it doesn't instantly save 10 files in a burst
-                last_save_t = time.perf_counter()
+            if key == 32:  # SPACE
+                if not capturing:
+                    # We are resuming from paused state
+                    if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
+                        phase = "RIGHT"
+                        print("\n[COLLECT] RIGHT phase started. Capturing RIGHT hand...\n")
 
-            # If finished, exit successfully
-            if saved >= self.dataset_size:
+                    capturing = True
+                else:
+                    capturing = False
+                    print(f"\n[COLLECT] Paused. Current phase: {phase}. Press SPACE to continue.\n")
+
+
+            # ---- Finish ----
+            if total_saved >= total_target:
                 cap.release()
                 cv2.destroyAllWindows()
                 if self.open_after:
                     self.open_folder(output_folder)
                 return True
 
+            # ---- If not capturing, do nothing ----
             if not capturing:
                 continue
 
-            # only save at interval
+            # ---- If phase completed, auto-pause and wait for SPACE ----
+            if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
+                capturing = False
+                print("\n[COLLECT] LEFT phase complete.")
+                print("[COLLECT] Remove LEFT hand, show RIGHT hand.")
+                print("[COLLECT] Press SPACE to start RIGHT-hand capture.\n")
+                continue
+
+            if phase == "RIGHT" and saved_phase["RIGHT"] >= per_hand:
+                # will exit next loop via total_saved
+                capturing = False
+                continue
+
+            # ---- Interval gate: only save every capture_interval seconds ----
             now = time.perf_counter()
-            if now - last_save_t < capture_interval:
+            if (now - last_save_t) < capture_interval:
                 continue
 
-            if require_hand and not hand_ok:
+            # ---- Require correct hand for current phase ----
+            if require_hand and not match_ok:
                 continue
 
-            if hand_ok:
-                hand_lm = res.multi_hand_landmarks[0]
-                vec = self.landmarks_to_feature_vector(hand_lm)
-                npy_path = os.path.join(output_folder, f"{gesture_name}_{saved:05d}.npy")
-                np.save(npy_path, vec)
-                saved += 1
-                last_save_t = now
+            # ---- Save sample ----
+            lm_list = result.hand_landmarks[0]
+            vec = self.landmarks_to_feature_vector(lm_list)
 
-            else:
-                # if require_hand=False, you could save blank/noise, but generally not desired
-                last_save_t = now
+            idx = saved_phase[phase]
+            npy_path = os.path.join(output_folder, f"{gesture_name}_{phase}_{idx:05d}.npy")
+            np.save(npy_path, vec)
 
-        cap.release()
-        cv2.destroyAllWindows()
+            saved_phase[phase] += 1
+            last_save_t = now
+            # If we just finished LEFT phase -> switch phase NOW (so overlay updates),
+            # but pause capturing until user presses SPACE again
+            if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
+                phase = "RIGHT"       # <-- this makes "Need: Right" show immediately
+                capturing = False     # <-- forces pause
+                print("\n[COLLECT] LEFT phase complete.")
+                print("[COLLECT] Now show your RIGHT hand.")
+                print("[COLLECT] Press SPACE to start RIGHT-hand capture.\n")
 
-        if self.open_after:
-            self.open_folder(output_folder)
 
-        return True
 
 
 # ===================== DATASET OPS (.npy) =====================

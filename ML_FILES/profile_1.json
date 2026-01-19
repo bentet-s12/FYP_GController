@@ -8,22 +8,28 @@
       "key_type": "Keyboard"
     },
     {
-      "gesture": "wave",
-      "key_pressed": "space",
-      "input_type": "Click",
-      "key_type": "Keyboard"
-    },
-    {
       "gesture": "thumbs_down",
       "key_pressed": "s",
       "input_type": "Hold",
       "key_type": "Keyboard"
     },
     {
-      "gesture": "ok",
-      "key_pressed": "left",
-      "input_type": "D_Click",
-      "key_type": "Mouse"
+      "gesture": "wave",
+      "key_pressed": "space",
+      "input_type": "Click",
+      "key_type": "Keyboard"
+    },
+    {
+      "gesture": "thumbs_left",
+      "key_pressed": "a",
+      "input_type": "Hold",
+      "key_type": "Keyboard"
+    },
+    {
+      "gesture": "thumbs_right",
+      "key_pressed": "d",
+      "input_type": "Hold",
+      "key_type": "Keyboard"
     }
   ]
 }

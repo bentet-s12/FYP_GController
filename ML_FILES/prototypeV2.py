@@ -11,6 +11,9 @@ from ctypes import wintypes
 import pyautogui  # Cursor mode absolute positioning
 import threading
 from screeninfo import get_monitors
+from mediapipe.tasks import python as mp_python
+from mediapipe.tasks.python import vision
+
 
 
 
@@ -19,6 +22,7 @@ from Actions import Actions  # your pydirectinput-based Actions.py
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(SCRIPT_DIR, "data", "landmarkVectors")
+MODEL_TASK_PATH = os.path.join(SCRIPT_DIR, "data", "models", "hand_landmarker.task")
 
 # IMPORTANT: this must match your real file name
 PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "profile_1.json")
@@ -29,6 +33,12 @@ STRICT_GESTURELIST = True  # if True: ignore profile mappings whose gesture is n
 
 K_NEIGHBORS = 3
 GESTURE_CONF_THRESHOLD = 0.6
+# Gestures where LEFT/RIGHT direction matters
+DIRECTIONAL_GESTURES = {
+    "thumbs_left",
+    "thumbs_right",
+}
+
 
 # ================== CURSOR / CAMERA MOUSE ==================
 
@@ -56,6 +66,15 @@ class INPUT(ctypes.Structure):
 def send_relative_mouse(dx, dy):
     inp = INPUT(type=INPUT_MOUSE, mi=MOUSEINPUT(dx=int(dx), dy=int(dy), mouseData=0, dwFlags=MOUSEEVENTF_MOVE, time=0, dwExtraInfo=None))
     user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(inp))
+
+def normalize_handedness(label: str, flipped_for_detection: bool) -> str:
+    if label not in ("Left", "Right"):
+        return label
+    # For your code: you DO flip before detection, so swap.
+    if flipped_for_detection:
+        return "Right" if label == "Left" else "Left"
+    return label
+
 
 
 # =================================================
@@ -195,24 +214,31 @@ class KNNGestureClassifier:
 # =================================================
 
 def landmarks_to_feature_vector(hand_lm, mirror=False):
-    coords = []
-    for p in hand_lm.landmark:
-        coords.append([p.x, p.y])
-    coords = np.array(coords, dtype=np.float32)
+    """
+    Supports BOTH:
+      - Solutions: hand_lm.landmark (21 pts)
+      - Tasks:     hand_lm is a list of 21 landmarks (each has .x/.y)
+    """
+    # Tasks gives: list[NormalizedLandmark]
+    if isinstance(hand_lm, list):
+        pts = hand_lm
+    else:
+        # Solutions gives an object with .landmark
+        pts = hand_lm.landmark
 
-    # wrist-centered
+    coords = np.array([[p.x, p.y] for p in pts], dtype=np.float32)
+
     wrist = coords[0].copy()
     coords = coords - wrist
 
-    # scale normalized
     scale = np.linalg.norm(coords[9]) + 1e-6
     coords = coords / scale
 
-    # optional mirror for left/right symmetry
     if mirror:
         coords[:, 0] *= -1.0
 
     return coords.reshape(-1)
+
 
 
 # =================================================
@@ -384,6 +410,8 @@ class ClickTesterGUI:
     def __init__(self, app):
         self.app = app
         self.root = tk.Tk()
+        self.running = True
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.title("Gesture Controller Tester")
         self.root.geometry("780x620")
         self.root.resizable(True, True)
@@ -407,12 +435,28 @@ class ClickTesterGUI:
         self.btn_reload = tk.Button(self.main, text="Reload Profile (r)", command=self.app.reload_profile_actions)
         self.btn_reload.pack(pady=10)
 
+        self.btn_cam_toggle = tk.Button(
+            self.main,
+            text="Hide Camera View",
+            command=self._toggle_camera_button
+        )
+        self.btn_cam_toggle.pack(pady=6)
+
+        self.btn_vec_toggle = tk.Button(
+            self.main,
+            text="Hide Hand Vectors",
+            command=self._toggle_vectors_button
+        )
+        self.btn_vec_toggle.pack(pady=6)
+
+
+
         # Hand mode buttons
         frame_hand = tk.Frame(self.main)
         frame_hand.pack(fill="x", expand=True, pady=6)
         tk.Label(frame_hand, text="Hand Mode: ").pack(side=tk.LEFT)
-        tk.Button(frame_hand, text="Right", command=lambda: self.app.set_hand_mode("right")).pack(side=tk.LEFT, padx=4)
-        tk.Button(frame_hand, text="Left", command=lambda: self.app.set_hand_mode("left")).pack(side=tk.LEFT, padx=4)
+        tk.Button(frame_hand, text="Right pointer", command=lambda: self.app.set_hand_mode("right")).pack(side=tk.LEFT, padx=4)
+        tk.Button(frame_hand, text="Left pointer", command=lambda: self.app.set_hand_mode("left")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_hand, text="Auto", command=lambda: self.app.set_hand_mode("auto")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_hand, text="MultiKB", command=lambda: self.app.set_hand_mode("multi_keyboard")).pack(side=tk.LEFT, padx=4)
 
@@ -472,12 +516,14 @@ class ClickTesterGUI:
 
 
     def on_close(self):
+        self.running = False
         self.app.running = False
+        self.app.want_camera_view = False
         try:
-            cv2.destroyAllWindows()
+            self.root.after(50, self.root.destroy)
         except Exception:
-            pass
-        self.root.destroy()
+            self.root.destroy()
+
 
 
     def update_status(self, mode_text, gesture_text, mapped_text, fired_text):
@@ -497,6 +543,21 @@ class ClickTesterGUI:
 
     def _on_track_adj_toggle(self):
         self.app.cam_apply_to_tracking = bool(self.track_adj_var.get())
+
+    def _toggle_camera_button(self):
+        self.app.toggle_camera_view()
+        self.btn_cam_toggle.config(
+            text="Hide Camera View" if self.app.want_camera_view else "Show Camera View"
+        )
+
+    def _toggle_vectors_button(self):
+        self.app.toggle_hand_vectors()
+        self.btn_vec_toggle.config(
+            text="Hide Hand Vectors" if self.app.show_hand_vectors else "Show Hand Vectors"
+        )
+
+
+
 
 
 # =================================================
@@ -537,9 +598,16 @@ class GestureControllerApp:
     def __init__(self):
         self.running = True
 
+        #GUI logic
+        self.want_camera_view = True      # what the GUI wants
+        self._camera_window_open = False  # what OpenCV currently has
+        self._window_name = "Gesture Controller"
+        self.swap_handedness = True  # if pointing hand is wrong, change this to False
+
         # modes
         self.hand_mode = "right"   # right/left/auto
         self.mouse_mode = "DISABLED" # DISABLED/CAMERA/CURSOR
+        self.show_camera_view = True  # toggle OpenCV window on/off
 
         # Camera adjustment settings (GUI-controlled)
         self.cam_contrast = 1.0      # 0.5 .. 3.0
@@ -559,14 +627,26 @@ class GestureControllerApp:
         self.classifier = KNNGestureClassifier()
         self.classifier.load_dataset()
 
-        # MediaPipe
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=2,
-            min_detection_confidence=0.55,
-            min_tracking_confidence=0.55
+        # -------- MediaPipe Tasks: HandLandmarker (0.10.30+) --------
+        if not os.path.isfile(MODEL_TASK_PATH):
+            raise FileNotFoundError(
+                f"[MODEL] Missing model file: {MODEL_TASK_PATH}\n"
+                "Place hand_landmarker.task at: data/models/hand_landmarker.task"
+            )
+
+        base_options = mp_python.BaseOptions(model_asset_path=MODEL_TASK_PATH)
+        options = vision.HandLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.VIDEO,
+            num_hands=2,
+            min_hand_detection_confidence=0.55,
+            min_hand_presence_confidence=0.55,
+            min_tracking_confidence=0.55,
         )
+
+        self.hand_landmarker = vision.HandLandmarker.create_from_options(options)
+        self._mp_start_t = time.perf_counter()
+
 
         self.cap = cv2.VideoCapture(0)
 
@@ -601,6 +681,9 @@ class GestureControllerApp:
 
         # Optional: in multi_keyboard mode, only allow Keyboard actions (recommended)
         self.MULTI_KEYBOARD_ONLY = True
+
+        self.show_hand_vectors = True
+
 
     def set_hand_mode(self, mode: str):
         self.hand_mode = mode
@@ -720,6 +803,20 @@ class GestureControllerApp:
             out = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
         return out
+    
+    def toggle_camera_view(self):
+        self.want_camera_view = not self.want_camera_view
+
+    def toggle_hand_vectors(self):
+        self.show_hand_vectors = not self.show_hand_vectors
+
+    def normalize_handedness(self, label: str) -> str:
+        if label not in ("Left", "Right"):
+            return label
+        if self.swap_handedness:
+            return "Right" if label == "Left" else "Left"
+        return label
+
 
 
 
@@ -727,20 +824,30 @@ class GestureControllerApp:
 
     def run(self):
         while self.running:
-            ret, frame = self.cap.read()
+            ret, frame_raw = self.cap.read()
             if not ret:
                 continue
 
-            frame = cv2.flip(frame, 1)
+            # Use RAW frame for tracking (MediaPipe + feature extraction)
+            frame_for_tracking = frame_raw
+
+            # Use FLIPPED frame only for display (so it looks mirror-like to you)
+            frame = cv2.flip(frame_raw, 1)
+
 
             # Decide what frame MediaPipe should see
             if self.cam_apply_to_tracking:
-                frame_for_mp = self._apply_camera_adjustments(frame.copy())
+                frame_for_mp = self._apply_camera_adjustments(frame_for_tracking.copy())
             else:
-                frame_for_mp = frame
+                frame_for_mp = frame_for_tracking
 
             frame_rgb = cv2.cvtColor(frame_for_mp, cv2.COLOR_BGR2RGB)
-            res = self.hands.process(frame_rgb)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+
+            timestamp_ms = int((time.perf_counter() - self._mp_start_t) * 1000)
+
+            res = self.hand_landmarker.detect_for_video(mp_image, timestamp_ms)
+
 
             # Decide what you want to display
             frame_display = self._apply_camera_adjustments(frame.copy())
@@ -754,21 +861,34 @@ class GestureControllerApp:
             best_point_hand = None
 
             detected = []
+            best_point_conf = 0.0
+            best_point_hand = None
 
-            if res.multi_hand_landmarks and res.multi_handedness:
-                for hand_lm, handedness in zip(res.multi_hand_landmarks, res.multi_handedness):
-                    label = handedness.classification[0].label  # "Left"/"Right"
+            if res.hand_landmarks and res.handedness:
+                for i in range(min(len(res.hand_landmarks), len(res.handedness))):
+                    hand_lm = res.hand_landmarks[i]  # list of 21 landmarks
+                    # handedness[i] is a list of Category; take top category
+                    raw_label = res.handedness[i][0].category_name
+                    label = self.normalize_handedness(raw_label)
+                    label = normalize_handedness(label, flipped_for_detection=True)
+
                     # compute both normal + mirrored predictions, choose best
+                    # --- Base prediction (no mirroring) ---
                     feat = landmarks_to_feature_vector(hand_lm, mirror=False)
                     pred1, conf1 = self.classifier.predict(feat)
 
-                    feat_m = landmarks_to_feature_vector(hand_lm, mirror=True)
-                    pred2, conf2 = self.classifier.predict(feat_m)
+                    pred = pred1
+                    conf = conf1
 
-                    if conf2 > conf1:
-                        pred, conf = pred2, conf2
-                    else:
-                        pred, conf = pred1, conf1
+                    # --- Mirror-invariant inference ONLY for non-directional gestures ---
+                    if pred1 not in DIRECTIONAL_GESTURES:
+                        feat_m = landmarks_to_feature_vector(hand_lm, mirror=True)
+                        pred2, conf2 = self.classifier.predict(feat_m)
+
+                        if conf2 > conf1:
+                            pred = pred2
+                            conf = conf2
+
 
                     if conf < GESTURE_CONF_THRESHOLD:
                         pred = "none"
@@ -779,6 +899,18 @@ class GestureControllerApp:
                     if pred == "point" and conf > best_point_conf:
                         best_point_conf = conf
                         best_point_hand = (label, hand_lm, pred, conf)
+
+            # ---- draw landmarks (Tasks API) ----
+            if self.show_hand_vectors and detected:
+                h, w = frame_display.shape[:2]
+                for (_, hand_lm, _, _) in detected:
+                    for p in hand_lm:
+                        cx = int((1.0 - p.x) * w)  # keep this if your display is flipped
+                        cy = int(p.y * h)
+                        cv2.circle(frame_display, (cx, cy), 2, (255, 0, 0), -1)
+
+
+
 
             # decide pointer vs action based on mode
             action_hands = []  # list of tuples (label, hand_lm, pred, conf)
@@ -828,23 +960,28 @@ class GestureControllerApp:
             # ---- pointer movement ----
             if pointer_hand:
                 _, hand_lm, _, _ = pointer_hand
-                tip = hand_lm.landmark[8]  # index fingertip
+                tip = hand_lm[8]  # index fingertip (UNFLIPPED coords)
+
+                # Convert to DISPLAY coords (because frame_display is FLIPPED)
+                x = 1.0 - tip.x
+                y = tip.y
 
                 if self.mouse_mode == "DISABLED":
                     pass
                 elif self.mouse_mode == "CURSOR":
-                    self._cursor_move(tip.x, tip.y)
+                    self._cursor_move(x, y)   # use flipped-x
                 else:
-                    dx = (tip.x - 0.5) * self._joy_gain
-                    dy = (tip.y - 0.5) * self._joy_gain
+                    dx = (x - 0.5) * self._joy_gain
+                    dy = (y - 0.5) * self._joy_gain
                     dx = self._apply_deadzone(dx)
                     dy = self._apply_deadzone(dy)
                     self._camera_move(dx, dy)
 
-                # draw red dot on fingertip
+                # draw red dot on fingertip (on FLIPPED display frame)
                 h, w = frame_display.shape[:2]
-                cx, cy = int(tip.x * w), int(tip.y * h)
+                cx, cy = int(x * w), int(y * h)
                 cv2.circle(frame_display, (cx, cy), 8, (0, 0, 255), -1)
+
 
             # ---- action execution (MULTI-HAND for multi_keyboard) ----
             # Stop holds for hands that disappeared
@@ -903,16 +1040,58 @@ class GestureControllerApp:
             except Exception:
                 pass
 
+            if self.want_camera_view:
+                if not self._camera_window_open:
+                    try:
+                        cv2.namedWindow(self._window_name, cv2.WINDOW_NORMAL)
+                    except Exception:
+                        pass
+                    self._camera_window_open = True
 
+                cv2.imshow(self._window_name, frame_display)
+                k = cv2.waitKey(1) & 0xFF
 
-            cv2.imshow("Gesture Controller", frame_display)
+            else:
+                # If GUI wants it hidden, close window here (camera thread)
+                if self._camera_window_open:
+                    try:
+                        cv2.destroyWindow(self._window_name)
+                    except Exception:
+                        pass
+                    self._camera_window_open = False
 
-            k = cv2.waitKey(1) & 0xFF
+                # Don’t call waitKey when no window (some builds get weird)
+                time.sleep(0.01)
+                k = 255
+
             if k == ord('q'):
                 self.running = False
             if k == ord('r'):
                 self.reload_profile_actions()
 
+        # camera thread cleanup
+        try:
+            cap.release()
+        except Exception:
+            pass
+
+        try:
+            cv2.destroyAllWindows()
+        except Exception:
+            pass
+
+        try:
+            self.landmarker.close()  # MediaPipe Tasks supports close()
+        except Exception:
+            pass
+
+        if self._camera_window_open:
+            try:
+                cv2.destroyWindow(self._window_name)
+            except Exception:
+                pass
+
+        
         self.cap.release()
         cv2.destroyAllWindows()
 
