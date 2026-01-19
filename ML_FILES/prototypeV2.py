@@ -432,6 +432,15 @@ class ClickTesterGUI:
         self.label_fired = tk.Label(self.main, text="Fired: NO", font=("Arial", 12))
         self.label_fired.pack(pady=8)
 
+        # ---- Shortcuts help ----
+        shortcuts = (
+            "Shortcuts (works while GUI is focused):\n"
+            "P = Cycle Hand Mode | R = Reload Profile | V = Toggle Vectors | C = Toggle Camera | Q = Quit"
+        )
+        self.label_shortcuts = tk.Label(self.main, text=shortcuts, font=("Arial", 11), justify="left")
+        self.label_shortcuts.pack(pady=10)
+
+
         self.btn_reload = tk.Button(self.main, text="Reload Profile (r)", command=self.app.reload_profile_actions)
         self.btn_reload.pack(pady=10)
 
@@ -513,6 +522,10 @@ class ClickTesterGUI:
         self.root.update_idletasks()
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
 
+        # Bind keys globally within this Tk window (works even when buttons/sliders are focused)
+        self.root.bind_all("<KeyPress>", self._on_keypress)
+
+
 
 
     def on_close(self):
@@ -555,6 +568,38 @@ class ClickTesterGUI:
         self.btn_vec_toggle.config(
             text="Hide Hand Vectors" if self.app.show_hand_vectors else "Show Hand Vectors"
         )
+
+    def _on_keypress(self, event):
+        k = (event.keysym or "").lower()
+
+        if k == "p":
+            self.app.cycle_hand_mode()
+
+        elif k == "r":
+            self.app.reload_profile_actions()
+
+        elif k == "v":
+            self.app.toggle_hand_vectors()
+            # If you have a vectors button, keep its text in sync:
+            if hasattr(self, "btn_vec_toggle"):
+                self.btn_vec_toggle.config(
+                    text="Hide Hand Vectors" if self.app.show_hand_vectors else "Show Hand Vectors"
+                )
+
+        elif k == "c":
+            self.app.toggle_camera_view()
+            if hasattr(self, "btn_cam_toggle"):
+                self.btn_cam_toggle.config(
+                    text="Hide Camera View" if self.app.want_camera_view else "Show Camera View"
+                )
+
+        elif k == "q":
+            # quit safely
+            self.app.running = False
+            try:
+                self.root.after(50, self.root.destroy)
+            except Exception:
+                self.root.destroy()
 
 
 
@@ -606,6 +651,9 @@ class GestureControllerApp:
 
         # modes
         self.hand_mode = "right"   # right/left/auto
+        self.hand_mode_cycle = ["right", "left", "auto", "multi_keyboard"]
+        self._hand_mode_idx = self.hand_mode_cycle.index(self.hand_mode)
+
         self.mouse_mode = "DISABLED" # DISABLED/CAMERA/CURSOR
         self.show_camera_view = True  # toggle OpenCV window on/off
 
@@ -816,6 +864,11 @@ class GestureControllerApp:
         if self.swap_handedness:
             return "Right" if label == "Left" else "Left"
         return label
+
+    def cycle_hand_mode(self):
+        self._hand_mode_idx = (self._hand_mode_idx + 1) % len(self.hand_mode_cycle)
+        self.hand_mode = self.hand_mode_cycle[self._hand_mode_idx]
+        print(f"[MODE] Hand mode switched to: {self.hand_mode}")
 
 
 
@@ -1065,9 +1118,26 @@ class GestureControllerApp:
                 k = 255
 
             if k == ord('q'):
+                # Quit safely
                 self.running = False
-            if k == ord('r'):
+
+            elif k == ord('r'):
+                # Reload profile
                 self.reload_profile_actions()
+
+            elif k == ord('p'):
+                # Cycle hand mode
+                self.cycle_hand_mode()
+
+            elif k == ord('v'):
+                # Toggle hand vectors
+                self.toggle_hand_vectors()
+
+            elif k == ord('c'):
+                # Toggle camera view
+                self.toggle_camera_view()
+
+
 
         # camera thread cleanup
         try:
