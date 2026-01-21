@@ -1,7 +1,7 @@
 [
-    "thumbs_up",
-    "thumbs_down",
-    "wave",
-    "thumbs_left",
-    "thumbs_right"
+    "accelerate",
+    "reverse",
+    "turn_left",
+    "turn_right",
+    "neutral"
 ]

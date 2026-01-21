@@ -146,6 +146,9 @@ class Actions:
      # ----- MAIN ACTION -----
     def useAction(self, token=None):
 
+        if getattr(self, "_key_pressed", None) is None:
+            return
+
         # --- bypass token check if None ---
         if token is not None:
             if token != self._G_name and token != self._key_pressed and token != self._name:

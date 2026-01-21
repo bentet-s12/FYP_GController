@@ -453,21 +453,29 @@ class CustomGestureCollector:
         scale = np.linalg.norm(coords[9]) + 1e-6
         coords = coords / scale
         return coords.reshape(-1)
+    
 
     def collect_gesture(self, gesture_name: str, output_folder: str,
-                    capture_interval: float = 0.1,
-                    require_hand: bool = True) -> bool:
+                        capture_interval: float = 0.1,
+                        require_hand: bool = True) -> bool:
         """
-        TWO-PHASE AUTO-CAPTURE (SPACE-ARMED):
-        - Starts paused.
-        - Captures LEFT hand (dataset_size/2 samples) at capture_interval spacing.
-        - When LEFT phase completes, auto-pauses and asks for RIGHT hand.
-        - Press SPACE again to start RIGHT phase.
-        - Q cancels: deletes samples in output_folder and returns False.
+        AUTO-CAPTURE WITH MODES:
 
-        Returns True only if dataset_size samples are collected (LEFT + RIGHT).
+        Keys:
+        SPACE -> start/pause capture
+        Q     -> cancel (deletes saved samples, returns False)
+        S     -> toggle mode: 2-hand <-> 1-hand (resets progress, pauses)
+        D     -> (1-hand mode only) toggle target hand Left/Right (pauses)
+
+        Modes:
+        2-hand mode: LEFT per_hand then RIGHT per_hand (total dataset_size)
+        1-hand mode: ONLY ONE hand for dataset_size samples (default Left, D toggles)
+
+        Notes:
+        - Uses MediaPipe Tasks handedness category_name ("Left"/"Right")
+        - Timestamp is forced monotonic across runs.
         """
-
+        self.last_collection_meta = {"mode": None, "dataset_label": None}
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
             print("[CAM] Failed to open camera.")
@@ -475,21 +483,31 @@ class CustomGestureCollector:
 
         os.makedirs(output_folder, exist_ok=True)
 
-        # ---- Two-phase settings ----
+        # Ensure monotonic timestamps across multiple collect_gesture() calls
+        if not hasattr(self, "_last_ts_ms"):
+            self._last_ts_ms = -1
+
         total_target = int(self.dataset_size)
-        per_hand = total_target // 2  # 200 -> 100
-        phase = "LEFT"                # "LEFT" then "RIGHT"
+
+        # ---- Mode state ----
+        mode = "TWO_HAND"   # "ONE_HAND" or "TWO_HAND"
+        self.last_collection_meta["mode"] = "TWO_HAND"
+        self.last_collection_meta["dataset_label"] = gesture_name
+        target_one_hand = "LEFT"  # used only in ONE_HAND mode (default LEFT)
+        per_hand = total_target // 2  # for TWO_HAND mode (200->100)
+        phase = "LEFT"  # TWO_HAND phase: LEFT then RIGHT
         saved_phase = {"LEFT": 0, "RIGHT": 0}
+        saved_one = 0
 
-        capturing = False  # SPACE toggles capturing
-        last_save_t = 0.0  # last time we successfully saved a sample
+        capturing = False
+        last_save_t = 0.0
 
-        print("\n[COLLECT] TWO-PHASE AUTO-CAPTURE")
+        print("\n[COLLECT] AUTO-CAPTURE")
         print("  SPACE -> start / pause capture")
-        print("  Q     -> cancel (saves NOTHING)\n")
-        print(f"[COLLECT] Target: LEFT {per_hand} + RIGHT {per_hand} = {total_target} samples")
-        print(f"[COLLECT] Interval: {capture_interval:.2f}s\n")
-        print("[COLLECT] Show your LEFT hand first. Press SPACE to start.\n")
+        print("  Q     -> cancel (saves NOTHING)")
+        print("  S     -> toggle 1-hand / 2-hand mode (resets progress)")
+        print("  D     -> (1-hand mode) toggle target Left/Right (resets progress)")
+        print(f"\n[COLLECT] Interval: {capture_interval:.2f}s\n")
 
         def cleanup_folder():
             try:
@@ -502,10 +520,26 @@ class CustomGestureCollector:
             except Exception:
                 pass
 
-        # IMPORTANT: timestamps must be monotonically increasing across runs
-        # Make sure __init__ has: self._last_ts_ms = -1
-        if not hasattr(self, "_last_ts_ms"):
-            self._last_ts_ms = -1
+        def reset_progress(new_mode=None):
+            nonlocal mode, phase, saved_phase, saved_one, capturing, target_one_hand, per_hand
+            if new_mode is not None:
+                mode = new_mode
+            per_hand = total_target // 2
+            phase = "LEFT"
+            saved_phase = {"LEFT": 0, "RIGHT": 0}
+            saved_one = 0
+            capturing = False
+
+        def want_label_for_current():
+            if mode == "ONE_HAND":
+                self.last_collection_meta["mode"] = "ONE_HAND"
+                self.last_collection_meta["dataset_label"] = f"{gesture_name}__{'L' if target_one_hand=='LEFT' else 'R'}"
+
+                return "Left" if target_one_hand == "LEFT" else "Right"
+            else:
+                return "Left" if phase == "LEFT" else "Right"
+
+        window_name = "Collect Gesture Samples (AUTO)"
 
         while True:
             ret, frame = cap.read()
@@ -532,123 +566,151 @@ class CustomGestureCollector:
 
             hand_ok = bool(result.hand_landmarks) and len(result.hand_landmarks) > 0
 
-            # Handedness from Tasks
-            handed = None  # "Left" or "Right"
+            handed = None  # "Left"/"Right"
             if hand_ok and getattr(result, "handedness", None):
                 try:
-                    handed = result.handedness[0][0].category_name  # "Left" or "Right"
+                    handed = result.handedness[0][0].category_name
                 except Exception:
                     handed = None
 
-            want = "Left" if phase == "LEFT" else "Right"
+            want = want_label_for_current()
             match_ok = (hand_ok and handed == want)
 
-            total_saved = saved_phase["LEFT"] + saved_phase["RIGHT"]
+            # Progress counters for overlay
+            if mode == "ONE_HAND":
+                prog_text = f"{saved_one}/{total_target}"
+            else:
+                prog_text = f"L {saved_phase['LEFT']}/{per_hand} | R {saved_phase['RIGHT']}/{per_hand}"
 
             # ---- Overlay ----
             cv2.putText(frame, f"Gesture: {gesture_name}", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.putText(frame, f"Phase: {phase} ({saved_phase[phase]}/{per_hand})", (10, 70),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.putText(frame, f"Total: {total_saved}/{total_target}", (10, 110),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
-            cv2.putText(frame, f"Detected: {handed or 'None'} | Need: {want}", (10, 150),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            cv2.putText(frame, f"Mode: {mode}  (S toggles)", (10, 70),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 255, 0), 2)
 
-            phase_hint = ""
-            if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
-                phase_hint = "LEFT done. Press SPACE to start RIGHT."
-            elif phase == "RIGHT" and saved_phase["RIGHT"] >= per_hand:
-                phase_hint = "RIGHT done."
+            if mode == "ONE_HAND":
+                cv2.putText(frame, f"Target: {target_one_hand}  (D toggles)", (10, 105),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            else:
+                cv2.putText(frame, f"Phase: {phase}", (10, 105),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-            cv2.putText(frame, f"Capturing: {'ON' if capturing else 'OFF'} (SPACE) {phase_hint}", (10, 190),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
-            cv2.putText(frame, "Q = Cancel (saves NOTHING)", (10, 230),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            cv2.putText(frame, f"Saved: {prog_text}", (10, 140),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.85, (0, 255, 0), 2)
 
-            # Draw landmarks
+            cv2.putText(frame, f"Detected: {handed or 'None'} | Need: {want}", (10, 175),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2)
+
+            cv2.putText(frame, f"Capturing: {'ON' if capturing else 'OFF'} (SPACE)", (10, 210),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 165, 255), 2)
+
+            cv2.putText(frame, "Q=Cancel  S=Mode  D=Hand(1-hand) ", (10, 245),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+            # Draw landmarks for visibility
             if hand_ok:
                 h, w = frame.shape[:2]
                 for p in result.hand_landmarks[0]:
                     cx, cy = int(p.x * w), int(p.y * h)
                     cv2.circle(frame, (cx, cy), 2, (255, 0, 0), -1)
 
-            cv2.imshow("Collect Gesture Samples (AUTO)", frame)
+            cv2.imshow(window_name, frame)
             key = cv2.waitKey(1) & 0xFF
 
-            # ---- Controls ----
+            # Close via window X (OpenCV)
+            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                cleanup_folder()
+                cap.release()
+                cv2.destroyAllWindows()
+                return False
+
+            # ---- Keys ----
             if key == ord('q'):
                 cleanup_folder()
                 cap.release()
                 cv2.destroyAllWindows()
                 return False
 
+            if key == ord('s'):
+                # toggle modes, reset progress, pause
+                new_mode = "ONE_HAND" if mode == "TWO_HAND" else "TWO_HAND"
+                reset_progress(new_mode=new_mode)
+                msg = "1-hand (200 on one hand)" if new_mode == "ONE_HAND" else "2-hand (100L then 100R)"
+                print(f"\n[COLLECT] Switched to {msg}. Progress reset. Press SPACE to start.\n")
+                continue
+
+            if key == ord('d'):
+                # toggle target in 1-hand mode only, reset progress, pause
+                if mode == "ONE_HAND":
+                    target_one_hand = "RIGHT" if target_one_hand == "LEFT" else "LEFT"
+                    reset_progress(new_mode="ONE_HAND")
+                    print(f"\n[COLLECT] 1-hand target switched to {target_one_hand}. Progress reset. Press SPACE to start.\n")
+                continue
+
             if key == 32:  # SPACE
-                if not capturing:
-                    # We are resuming from paused state
-                    if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
-                        phase = "RIGHT"
-                        print("\n[COLLECT] RIGHT phase started. Capturing RIGHT hand...\n")
-
-                    capturing = True
+                capturing = not capturing
+                # don't reset last_save_t; interval should remain consistent
+                if capturing:
+                    print("[COLLECT] Capturing ON")
                 else:
-                    capturing = False
-                    print(f"\n[COLLECT] Paused. Current phase: {phase}. Press SPACE to continue.\n")
+                    print("[COLLECT] Capturing OFF")
 
+            # ---- Finish check ----
+            if mode == "ONE_HAND":
+                if saved_one >= total_target:
+                    cap.release()
+                    cv2.destroyAllWindows()
+                    if self.open_after:
+                        self.open_folder(output_folder)
+                    return True
+            else:
+                if saved_phase["LEFT"] + saved_phase["RIGHT"] >= total_target:
+                    cap.release()
+                    cv2.destroyAllWindows()
+                    if self.open_after:
+                        self.open_folder(output_folder)
+                    return True
 
-            # ---- Finish ----
-            if total_saved >= total_target:
-                cap.release()
-                cv2.destroyAllWindows()
-                if self.open_after:
-                    self.open_folder(output_folder)
-                return True
-
-            # ---- If not capturing, do nothing ----
+            # ---- capture gate ----
             if not capturing:
                 continue
 
-            # ---- If phase completed, auto-pause and wait for SPACE ----
-            if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
-                capturing = False
-                print("\n[COLLECT] LEFT phase complete.")
-                print("[COLLECT] Remove LEFT hand, show RIGHT hand.")
-                print("[COLLECT] Press SPACE to start RIGHT-hand capture.\n")
-                continue
+            # TWO_HAND auto pause when phase filled
+            if mode == "TWO_HAND":
+                if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
+                    phase = "RIGHT"      # update Need immediately
+                    capturing = False
+                    print("\n[COLLECT] LEFT complete. Show RIGHT hand. Press SPACE to continue.\n")
+                    continue
+                if phase == "RIGHT" and saved_phase["RIGHT"] >= per_hand:
+                    capturing = False
+                    continue
 
-            if phase == "RIGHT" and saved_phase["RIGHT"] >= per_hand:
-                # will exit next loop via total_saved
-                capturing = False
-                continue
-
-            # ---- Interval gate: only save every capture_interval seconds ----
             now = time.perf_counter()
             if (now - last_save_t) < capture_interval:
                 continue
 
-            # ---- Require correct hand for current phase ----
             if require_hand and not match_ok:
                 continue
 
-            # ---- Save sample ----
+            # Save sample
             lm_list = result.hand_landmarks[0]
             vec = self.landmarks_to_feature_vector(lm_list)
 
-            idx = saved_phase[phase]
-            npy_path = os.path.join(output_folder, f"{gesture_name}_{phase}_{idx:05d}.npy")
-            np.save(npy_path, vec)
+            if mode == "ONE_HAND":
+                idx = saved_one
+                npy_path = os.path.join(output_folder, f"{gesture_name}_{target_one_hand}_{idx:05d}.npy")
+                np.save(npy_path, vec)
+                saved_one += 1
+            else:
+                idx = saved_phase[phase]
+                npy_path = os.path.join(output_folder, f"{gesture_name}_{phase}_{idx:05d}.npy")
+                np.save(npy_path, vec)
+                saved_phase[phase] += 1
 
-            saved_phase[phase] += 1
             last_save_t = now
-            # If we just finished LEFT phase -> switch phase NOW (so overlay updates),
-            # but pause capturing until user presses SPACE again
-            if phase == "LEFT" and saved_phase["LEFT"] >= per_hand:
-                phase = "RIGHT"       # <-- this makes "Need: Right" show immediately
-                capturing = False     # <-- forces pause
-                print("\n[COLLECT] LEFT phase complete.")
-                print("[COLLECT] Now show your RIGHT hand.")
-                print("[COLLECT] Press SPACE to start RIGHT-hand capture.\n")
+
 
 
 
@@ -899,8 +961,16 @@ def main():
                 else:
                     print(f"[GestureList] '{gesture_name}' already exists (kept)")
 
-                dataset.add_new_gesture_from_folder(gesture_name, out_folder)
-                print(f"[DATASET] Added '{gesture_name}' to landmarkVectors dataset.")
+                dataset_label = gesture_name
+                if hasattr(collector, "last_collection_meta") and collector.last_collection_meta:
+                    dataset_label = collector.last_collection_meta.get("dataset_label", gesture_name)
+
+                # GestureList should keep the BASE gesture name (no suffix)
+                gesture_store.add(gesture_name)
+
+                # Dataset uses the label (may be gesture__L or gesture__R)
+                dataset.add_new_gesture_from_folder(dataset_label, out_folder)
+                print(f"[DATASET] Added '{dataset_label}' to landmarkVectors dataset.")
 
             finally:
                 if out_folder:
@@ -991,19 +1061,52 @@ def main():
             if gesture not in gestures:
                 print("[ERROR] Invalid gesture (not in GestureList.json). Returning to main menu.")
                 continue
+            
+            # 3) key_pressed FIRST (NA means: no action mapping)
+            raw_key = input("Enter key_pressed (or NA for no action): ").strip()
 
-            # 3) key_type
+            if raw_key.lower() == "na":
+                # Save a "no action" mapping and skip ALL other prompts
+                profiles.upsert_mapping(pid, gesture, None, None, None)
+                print(f"[PROFILE] Set '{gesture}' to NA (no action) in profile_{pid}.json")
+                continue  # IMPORTANT: prevents asking key_type/input_type
+
+            # Normal mapping path (only when not NA)
+            key_pressed = raw_key.lower()
+
+            # 4) key_type
             raw_key_type = input("Enter key_type (keyboard / mouse): ").strip().lower()
             if raw_key_type not in ("keyboard", "mouse"):
                 print("[ERROR] Invalid key_type. Returning to main menu.")
                 continue
             key_type = "Keyboard" if raw_key_type == "keyboard" else "Mouse"
 
-            # 4) key_pressed (validated by key_type)
-            key_pressed = input("Enter key_pressed: ").strip().lower()
-            if not key_pressed:
-                print("[ERROR] key_pressed cannot be empty. Returning to main menu.")
+            # Mouse validation
+            if key_type == "Mouse" and key_pressed not in {"left", "right", "middle"}:
+                print("[ERROR] Mouse key_type only allows: left, right, middle.")
                 continue
+
+            # 5) input_type
+            raw_type = input("Enter input_type (click / hold / d_click): ").strip().lower()
+            if raw_type not in ("click", "hold", "d_click"):
+                print("[ERROR] Invalid input_type.")
+                continue
+            input_type = "Click" if raw_type == "click" else "Hold" if raw_type == "hold" else "D_Click"
+
+            profiles.upsert_mapping(pid, gesture, key_pressed, input_type, key_type)
+
+           
+
+            # Validation
+            if key_type == "Keyboard":
+                # None is allowed (means no keypress)
+                pass
+            else:
+                # Mouse requires a real button
+                if not key_pressed:
+                    print("[ERROR] Mouse key_type requires a button (left/right/middle).")
+                    continue
+
 
             # --- STRICT TYPE VALIDATION ---
             # Mouse: ONLY allow actual mouse buttons
@@ -1022,20 +1125,7 @@ def main():
                     continue
                 # Optional: you can add more mouse-only rejects here if needed (e.g., 'x1','x2')
 
-            # 5) input_type
-            raw_type = input("Enter input_type (click / hold / d_click): ").strip().lower()
-            if raw_type not in ("click", "hold", "d_click"):
-                print("[ERROR] Invalid input_type. Returning to main menu.")
-                continue
-
-            if raw_type == "click":
-                input_type = "Click"
-            elif raw_type == "hold":
-                input_type = "Hold"
-            else:
-                input_type = "D_Click"
-
-            profiles.upsert_mapping(pid, gesture, key_pressed, input_type, key_type)
+            
 
 
         # -------- 5) REMOVE profile mapping --------

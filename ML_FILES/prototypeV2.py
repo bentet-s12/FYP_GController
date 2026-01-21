@@ -870,7 +870,24 @@ class GestureControllerApp:
         self.hand_mode = self.hand_mode_cycle[self._hand_mode_idx]
         print(f"[MODE] Hand mode switched to: {self.hand_mode}")
 
+    def enforce_hand_suffix(self, pred_label: str, hand_label: str) -> str:
+        """
+        Enforce one-hand-only gestures.
+        If a class was trained as gesture__L or gesture__R,
+        only allow it on the corresponding hand.
+        """
+        if not pred_label or pred_label == "none":
+            return pred_label
 
+        if pred_label.endswith("__L"):
+            base = pred_label[:-3]
+            return base if hand_label == "Left" else "none"
+
+        if pred_label.endswith("__R"):
+            base = pred_label[:-3]
+            return base if hand_label == "Right" else "none"
+
+        return pred_label
 
 
     # ---------- main loop ----------
@@ -946,7 +963,8 @@ class GestureControllerApp:
                     if conf < GESTURE_CONF_THRESHOLD:
                         pred = "none"
                         conf = 0.0
-
+                    # enforce one-hand-only gestures
+                    pred = self.enforce_hand_suffix(pred, label)  # label is this hand's "Left"/"Right"
                     detected.append((label, hand_lm, pred, conf))
 
                     if pred == "point" and conf > best_point_conf:
