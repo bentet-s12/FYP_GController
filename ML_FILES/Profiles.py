@@ -78,12 +78,12 @@ class Profile:
             return None
 
     def editAction(self, actionName, newkey):
-        action = getAction(actionName)
+        action = self.getAction(actionName)
         action.SetKey(newKey)
         return True
 
     def editDuration(self, actionName, duration):
-        action = getAction(actionName)
+        action = self.getAction(actionName)
         action.SetDuration(duration)
         return True
 

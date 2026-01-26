@@ -1,5 +1,9 @@
 import designerapp.resources_rc
+import subprocess
+import sys
 import os
+import threading
+import socket
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QIODevice
 from PySide6.QtGui import QPixmap, QIcon
@@ -9,7 +13,30 @@ from PySide6.QtWidgets import (
     QStatusBar, QMessageBox, QLabel, QPushButton, 
     QLineEdit, QComboBox, QTabBar, QToolButton, QDialog, QScrollArea, 
     QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget
-) 
+)
+
+BACKEND_HOST = "127.0.0.1"
+BACKEND_PORT = 50555
+
+def backend_is_running(host=BACKEND_HOST, port=BACKEND_PORT, timeout=1.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as s:
+            s.sendall(b"PING")
+            resp = s.recv(1024).decode("utf-8", errors="ignore").strip()
+            return resp == "PONG"
+    except Exception:
+        return False
+
+
+def start_backend_if_needed(proto_path: str, project_root: str, port: int = BACKEND_PORT):
+    if backend_is_running(port=port):
+        return None  # already running
+
+    return subprocess.Popen(
+        [sys.executable, proto_path, "--background", "--port", str(port)],
+        cwd=project_root
+    )
+
     
 class MainWindow(QWidget):
     def __init__(self):
@@ -63,17 +90,47 @@ class MainWindow(QWidget):
         """)
 
         self.tabs.setCornerWidget(spacer, Qt.TopRightCorner)
-        
+        # ---- Power button ----
         self.power_button = self.window.findChild(QPushButton, "PowerButton")
-        # --- sanity check (helps a lot) ---
         assert self.power_button is not None, "PowerButton not found (check objectName in .ui)"
         self.power_button.clicked.connect(self.main_power_button)
+
+        # ---- Camera button ----
+        self.camera_button = self.window.findChild(QPushButton, "camera_button")
+        assert self.camera_button is not None, "camera_button not found (check objectName in .ui)"
+        self.camera_button.clicked.connect(self.on_camera_clicked)
         
+        # ---- Setting button ----
+        self.setting_button = self.window.findChild(QPushButton, "setting_button")
+        assert self.setting_button is not None, "setting_button not found (check objectName in .ui)"
+        self.setting_button.clicked.connect(self.on_setting_clicked)
+
         
         # got rid of close button for the default/first tab
         default_close_button = self.tabs.tabBar().tabButton(0, QTabBar.ButtonPosition.RightSide)
         default_close_button.hide()
-    
+
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.abspath(os.path.join(base_dir, ".."))
+        proto_path = os.path.join(project_root, "prototypeV2.py")
+
+        # Start ONE background process (only once)
+        self._backend_proc = start_backend_if_needed(
+            proto_path=proto_path,
+            project_root=project_root,
+            port=50555
+        )
+
+
+    # main command sender
+    def send_cmd(self, cmd: str):
+        try:
+            with socket.create_connection(("127.0.0.1", 50555), timeout=0.3) as s:
+                s.sendall((cmd + "\n").encode("utf-8"))
+                return s.recv(1024).decode("utf-8", errors="ignore").strip()
+        except Exception as e:
+            return f"ERR: {e}"
+        
     #function for the new tab button
     def new_tab_button(self, index):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -115,12 +172,14 @@ class MainWindow(QWidget):
             plus_button.setFlat(True)
             
             camera_button = QPushButton(new_four_buttons_container)
+            camera_button.clicked.connect(self.on_camera_clicked)
             camera_button.setGeometry(260, 0, 80,80)
             camera_button.setIcon(QIcon(camera_path))
             camera_button.setIconSize(QSize(50,50))
             camera_button.setFlat(True)
             
             setting_button = QPushButton(new_four_buttons_container)
+            setting_button.clicked.connect(self.on_setting_clicked)
             setting_button.setGeometry(390, 0, 80, 80)
             setting_button.setIcon(QIcon(setting_path))
             setting_button.setIconSize(QSize(50,50))
@@ -174,7 +233,16 @@ class MainWindow(QWidget):
 
     # for the main power button        
     def main_power_button(self):
+        try:
+            self.send_cmd("QUIT")
+        except Exception:
+            pass
+
+        if getattr(self, "_backend_proc", None) is not None and self._backend_proc.poll() is None:
+            self._backend_proc.terminate()
+
         QApplication.quit()
+
         
         
     # some widgets in the ui has dynamic property, kinda like tag in unity, this function is to find all widgets with the same dynamic property    
@@ -206,6 +274,13 @@ class MainWindow(QWidget):
             b.move(max(geom.width() - b.width()-50, 0), b.y())
         
         super().resizeEvent(event)
+
+    def on_camera_clicked(self):
+        print(self.send_cmd("TOGGLE_CAMERA"))
+
+    def on_setting_clicked(self):
+        print(self.send_cmd("TOGGLE_GUI"))
+
         
 
 def run():
