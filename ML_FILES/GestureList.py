@@ -1,6 +1,6 @@
 import os
 import json
-from Profiles import Profile
+
 
 class GestureList:
     def __init__(self, filename="GestureList.json"):

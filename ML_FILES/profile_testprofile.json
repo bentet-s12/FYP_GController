@@ -1,0 +1,12 @@
+{
+    "Profile_ID": "testprofile",
+    "Actions": [
+        {
+            "name": "MoveForward",
+            "G_name": "MoveGesture",
+            "key_pressed": "w",
+            "input_type": "Hold",
+            "key_type": "Keyboard"
+        }
+    ]
+}
