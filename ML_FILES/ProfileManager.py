@@ -35,7 +35,7 @@ class ProfileManager:
         if profileName in self._profileNames:
             print(f"[Warning] Profile '{profileName}' already exists!")
             return False
-        if len(self._profileNames) < 4:
+        if len(self._profileNames) < 9999:
             self._profileNames.append(profileName)
             self.writeFile("profileManager.json")
             new_profile = Profile(profileName)

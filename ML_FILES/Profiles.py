@@ -1,11 +1,13 @@
 from Actions import Actions
+from GestureList import GestureList
 import json
 import os
 
 class Profile:
-    def __init__(self, Profile_ID, ActionList=None):
+    def __init__(self, Profile_ID, ActionList=None, gesture_file="GestureList.json"):
         self._Profile_ID = Profile_ID
         self._ActionList = ActionList if ActionList is not None else []
+        self.Glist = GestureList(filename=gesture_file)
 
 
     @staticmethod
@@ -46,10 +48,21 @@ class Profile:
         return self._ActionList
 
     def addAction(self, action):
-        self._ActionList.append(action)
-        self.writeFile("profile_" + self._Profile_ID + ".json")
-        return
-
+        for existing in self._ActionList:
+            if existing.getGName() == action.getGName():
+                print(f"[Error] Gesture is already bound to an action.")
+                return False
+        
+        if action.getGName() in self.Glist.getList():
+            self._ActionList.append(action)
+            self.writeFile("profile_" + self._Profile_ID + ".json")
+            return True
+            
+        else:
+            print(f"[Error] Gesture does not exist.")
+            return False
+        
+#tweak to use g_name instead
     def getAction(self, actionName):
         for action in self._ActionList:
             if action.compareName(actionName):
@@ -67,6 +80,7 @@ class Profile:
     def editAction(self, actionName, newkey):
         action = self.getAction(actionName)
         action.SetKey(newkey)
+        action.SetKey(newKey)
         return True
 
     def editDuration(self, actionName, duration):
@@ -74,34 +88,67 @@ class Profile:
         action.SetDuration(duration)
         return True
 
+    def delete_action(self, action_name):
+        """Delete an action by action name and save profile JSON"""
+        for i, action in enumerate(self._ActionList):
+            if action.compareName(action_name):
+                del self._ActionList[i]
+                self.writeFile("profile_" + self._Profile_ID + ".json")
+                print(f"[OK] Deleted action: {action_name}")
+                return True
+
+        print(f"[Error] Action '{action_name}' not found.")
+        return False
+
+
 if __name__ == "__main__":
-    # Create a new profile
     profile = Profile("testprofile")
 
-    # Create some actions
-    action1 = Actions("Jump", "SPACEBAR", "Click")
-    action2 = Actions("MoveForward", "w", "Hold")
+    # --- Ensure gestures exist (CRITICAL) ---
+    if "JumpGesture" not in profile.Glist.getList():
+        profile.Glist._gestures.append("JumpGesture")
+    if "MoveGesture" not in profile.Glist.getList():
+        profile.Glist._gestures.append("MoveGesture")
+    profile.Glist._save()
 
-    # Add actions to the profile
+    # --- Create actions (CORRECT constructor usage) ---
+    action1 = Actions(
+        name="Jump",
+        G_name="JumpGesture",
+        key_pressed="space",
+        input_type="Click",
+        key_type="Keyboard"
+    )
+
+    action2 = Actions(
+        name="MoveForward",
+        G_name="MoveGesture",
+        key_pressed="w",
+        input_type="Hold",
+        key_type="Keyboard"
+    )
+
+    # --- Add actions ---
     profile.addAction(action1)
     profile.addAction(action2)
 
-    # Print all actions
-    print("Actions in profile:")
-    for action in profile.getActionList():
-        print(f"- {action.getName()} ({action.getKeyPressed()}, {action.getInputType()})")
+    filename = f"profile_{profile.getProfileID()}.json"
 
-    # Call an action
-    print("\nCalling 'Jump' action...")
-    profile.callfunction("Jump")
+    print("\n[Before delete]")
+    for a in profile.getActionList():
+        print("-", a.getName(), "| gesture:", a.getGName())
 
-    # Save profile to JSON
-    profile.writeFile("profile_" + profile.getProfileID() + ".json")
-    print("\nProfile saved.")
+    # --- Delete ---
+    print("\nDeleting JumpGesture...")
+    profile.delete_action("JumpGesture")
 
-    # Load the profile back from JSON
-    loaded_profile = Profile.readFile("profile_" + profile.getProfileID() + ".json")
-    print("\nLoaded profile actions:")
-    for action in loaded_profile.getActionList():
-        print(f"- {action.getName()} ({action.getKeyPressed()}, {action.getInputType()})")
+    print("\n[After delete]")
+    for a in profile.getActionList():
+        print("-", a.getName())
+
+    # --- Reload ---
+    print("\n[Reload from disk]")
+    loaded = Profile.readFile(filename)
+    for a in loaded.getActionList():
+        print("-", a.getName())
 
