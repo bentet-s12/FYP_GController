@@ -83,7 +83,8 @@ margin-top: 8px;
 }
 
 QTabBar::tab:last:hover {
-	background-color: rgb(255, 255, 255);
+	
+	background-color: rgb(37, 36, 56);
 }
 </string>
    </property>
@@ -120,247 +121,13 @@ QTabBar::tab:last:hover {
 </string>
     </property>
     <attribute name="title">
-     <string>default</string>
+     <string>1</string>
     </attribute>
-    <widget class="QWidget" name="individual_bar" native="true">
-     <property name="geometry">
-      <rect>
-       <x>99</x>
-       <y>150</y>
-       <width>1600</width>
-       <height>150</height>
-      </rect>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">background-color: transparent;</string>
-     </property>
-     <property name="individual_sub_bar_container" stdset="0">
-      <bool>true</bool>
-     </property>
-     <widget class="QPushButton" name="pushButton_2">
-      <property name="geometry">
-       <rect>
-        <x>1450</x>
-        <y>20</y>
-        <width>80</width>
-        <height>80</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">background-color: transparent;</string>
-      </property>
-      <property name="icon">
-       <iconset resource="resource/ICONS.qrc">
-        <normaloff>:/images/Recycle-Bin-2--Streamline-Core.png</normaloff>:/images/Recycle-Bin-2--Streamline-Core.png</iconset>
-      </property>
-      <property name="iconSize">
-       <size>
-        <width>50</width>
-        <height>50</height>
-       </size>
-      </property>
-      <property name="flat">
-       <bool>true</bool>
-      </property>
-     </widget>
-     <widget class="QFrame" name="frame">
-      <property name="geometry">
-       <rect>
-        <x>0</x>
-        <y>0</y>
-        <width>1400</width>
-        <height>125</height>
-       </rect>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">QFrame [individual_sub_bar] {
-background-color: #252438;
-border-radius: 12px;
-}</string>
-      </property>
-      <property name="frameShape">
-       <enum>QFrame::Shape::StyledPanel</enum>
-      </property>
-      <property name="frameShadow">
-       <enum>QFrame::Shadow::Raised</enum>
-      </property>
-      <property name="individual_sub_bar" stdset="0">
-       <bool>true</bool>
-      </property>
-      <widget class="QTextEdit" name="textEdit">
-       <property name="geometry">
-        <rect>
-         <x>100</x>
-         <y>45</y>
-         <width>100</width>
-         <height>60</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">border: none;
-background: transparent;
-color: rgb(224, 221, 229);</string>
-       </property>
-       <property name="html">
-        <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;meta charset=&quot;utf-8&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-hr { height: 1px; border-width: 0; }
-li.unchecked::marker { content: &quot;\2610&quot;; }
-li.checked::marker { content: &quot;\2612&quot;; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Segoe UI'; font-size:9pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p align=&quot;center&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;span style=&quot; font-size:14pt;&quot;&gt;W_LEFT&lt;/span&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-       </property>
-      </widget>
-      <widget class="QTextEdit" name="textEdit_2">
-       <property name="geometry">
-        <rect>
-         <x>350</x>
-         <y>25</y>
-         <width>100</width>
-         <height>30</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">border: none;
-color: rgb(224, 221, 229);
-background: transparent;</string>
-       </property>
-       <property name="readOnly">
-        <bool>true</bool>
-       </property>
-       <property name="html">
-        <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;meta charset=&quot;utf-8&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-hr { height: 1px; border-width: 0; }
-li.unchecked::marker { content: &quot;\2610&quot;; }
-li.checked::marker { content: &quot;\2612&quot;; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Segoe UI'; font-size:9pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p align=&quot;center&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;KEY INPUT&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-       </property>
-      </widget>
-      <widget class="QComboBox" name="comboBox">
-       <property name="geometry">
-        <rect>
-         <x>325</x>
-         <y>55</y>
-         <width>150</width>
-         <height>40</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">background-color: rgb(224, 221, 229);
-color: rgb(0, 0, 0);</string>
-       </property>
-      </widget>
-      <widget class="QTextEdit" name="textEdit_3">
-       <property name="geometry">
-        <rect>
-         <x>650</x>
-         <y>25</y>
-         <width>100</width>
-         <height>30</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">border: none;
-color: rgb(224, 221, 229);
-background: transparent;</string>
-       </property>
-       <property name="readOnly">
-        <bool>true</bool>
-       </property>
-       <property name="html">
-        <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;meta charset=&quot;utf-8&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-hr { height: 1px; border-width: 0; }
-li.unchecked::marker { content: &quot;\2610&quot;; }
-li.checked::marker { content: &quot;\2612&quot;; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Segoe UI'; font-size:9pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p align=&quot;center&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;INPUT TYPE&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-       </property>
-      </widget>
-      <widget class="QComboBox" name="comboBox_2">
-       <property name="geometry">
-        <rect>
-         <x>625</x>
-         <y>55</y>
-         <width>150</width>
-         <height>40</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">background-color: rgb(224, 221, 229);
-color: rgb(0, 0, 0);</string>
-       </property>
-      </widget>
-      <widget class="Line" name="line">
-       <property name="geometry">
-        <rect>
-         <x>937</x>
-         <y>20</y>
-         <width>3</width>
-         <height>80</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">background-color: rgb(224, 221, 229);</string>
-       </property>
-       <property name="orientation">
-        <enum>Qt::Orientation::Vertical</enum>
-       </property>
-      </widget>
-      <widget class="QComboBox" name="comboBox_3">
-       <property name="geometry">
-        <rect>
-         <x>1100</x>
-         <y>55</y>
-         <width>200</width>
-         <height>40</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">background-color: rgb(224, 221, 229);
-color: rgb(0, 0, 0);</string>
-       </property>
-      </widget>
-      <widget class="QTextEdit" name="textEdit_4">
-       <property name="geometry">
-        <rect>
-         <x>1125</x>
-         <y>25</y>
-         <width>150</width>
-         <height>30</height>
-        </rect>
-       </property>
-       <property name="styleSheet">
-        <string notr="true">border: none;
-color: rgb(224, 221, 229);
-background: transparent;</string>
-       </property>
-       <property name="readOnly">
-        <bool>true</bool>
-       </property>
-       <property name="html">
-        <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
-&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;meta charset=&quot;utf-8&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
-p, li { white-space: pre-wrap; }
-hr { height: 1px; border-width: 0; }
-li.unchecked::marker { content: &quot;\2610&quot;; }
-li.checked::marker { content: &quot;\2612&quot;; }
-&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'Segoe UI'; font-size:9pt; font-weight:400; font-style:normal;&quot;&gt;
-&lt;p align=&quot;center&quot; style=&quot; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;ACTION&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
-       </property>
-      </widget>
-     </widget>
-    </widget>
     <widget class="QWidget" name="widget" native="true">
      <property name="geometry">
       <rect>
        <x>1178</x>
-       <y>50</y>
+       <y>40</y>
        <width>470</width>
        <height>80</height>
       </rect>
@@ -476,6 +243,41 @@ li.checked::marker { content: &quot;\2612&quot;; }
       </property>
       <property name="flat">
        <bool>true</bool>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QScrollArea" name="scrollArea">
+     <property name="geometry">
+      <rect>
+       <x>99</x>
+       <y>150</y>
+       <width>1599</width>
+       <height>962</height>
+      </rect>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">border: none;</string>
+     </property>
+     <property name="verticalScrollBarPolicy">
+      <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOn</enum>
+     </property>
+     <property name="horizontalScrollBarPolicy">
+      <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <property name="individual_sub_bar_container" stdset="0">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="scrollAreaWidgetContents">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>1587</width>
+        <height>962</height>
+       </rect>
       </property>
      </widget>
     </widget>
