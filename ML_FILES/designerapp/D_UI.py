@@ -210,6 +210,7 @@ class MainWindow(QWidget):
             scroll_container.setStyleSheet ("""
             border: none;                                
                                             """)
+            scroll_container.setProperty("individual_sub_bar_container", True)
             
             
             self.tabs.insertTab(insert_index, new_tab, f"Tab {insert_index + 1}")
