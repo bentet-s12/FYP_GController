@@ -9,6 +9,7 @@ import mediapipe as mp
 import ctypes
 from ctypes import wintypes
 import pyautogui  # Cursor mode absolute positioning
+import socket
 import threading
 from screeninfo import get_monitors
 from mediapipe.tasks import python as mp_python
@@ -601,6 +602,27 @@ class ClickTesterGUI:
             except Exception:
                 self.root.destroy()
 
+    def hide(self):
+        try:
+            self.root.withdraw()
+        except Exception:
+            pass
+
+    def show(self):
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+        except Exception:
+            pass
+
+    def is_visible(self):
+        try:
+            return self.root.state() != "withdrawn"
+        except Exception:
+            return True
+
+
 
 
 
@@ -635,35 +657,89 @@ def select_monitor():
                 return monitors[idx]
         print("Invalid selection. Try again.")
 
+class CommandServer(threading.Thread):
+    def __init__(self, app, host="127.0.0.1", port=50555):
+        super().__init__(daemon=True)
+        self.app = app
+        self.host = host
+        self.port = port
+        self._stop_flag = False
+
+    def run(self):
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((self.host, self.port))
+            s.listen(5)
+            while not self._stop_flag:
+                try:
+                    conn, _ = s.accept()
+                except Exception:
+                    continue
+                with conn:
+                    try:
+                        data = conn.recv(1024).decode("utf-8", errors="ignore").strip()
+                    except Exception:
+                        data = ""
+                    if data == "PING":
+                        conn.sendall(b"PONG\n")
+                    if data == "TOGGLE_CAMERA":
+                        try:
+                            conn.sendall(b"OK\n")
+                        except Exception as e:
+                            print("[CMD] sendall failed:", e, flush=True)
+                        self.app._req_toggle_camera = True
+
+                    elif data == "TOGGLE_GUI":
+                        try:
+                            conn.sendall(b"OK\n")
+                        except Exception as e:
+                            print("[CMD] sendall failed:", e, flush=True)
+                        self.app._req_toggle_gui = True
+
+                    elif data == "QUIT":
+                        self.app.running = False
+                        # close Tk too (if exists)
+                        if self.app.gui is not None:
+                            try:
+                                self.app.gui.root.after(0, self.app.gui.root.destroy)
+                            except Exception:
+                                pass
+                        conn.sendall(b"OK\n")
+                        self._stop_flag = True
+                    else:
+                        conn.sendall(b"UNKNOWN\n")
+
 # =================================================
 #   MAIN APP
 # =================================================
 
 class GestureControllerApp:
-    def __init__(self):
+    def __init__(self, enable_gui: bool = True, enable_camera: bool = True):
         self.running = True
-
-        #GUI logic
-        self.want_camera_view = True      # what the GUI wants
-        self._camera_window_open = False  # what OpenCV currently has
+        self.enable_gui = enable_gui
+        self.enable_camera = enable_camera
+        self._req_toggle_gui = False
+        
+        self.want_camera_view = True
+        self._camera_window_open = False
         self._window_name = "Gesture Controller"
-        self.swap_handedness = True  # if pointing hand is wrong, change this to False
+        self._req_toggle_camera = False
 
-        # modes
-        self.hand_mode = "right"   # right/left/auto
+        self.hand_mode = "right"
+        self.mouse_mode = "DISABLED"
+        self.show_hand_vectors = True
+
         self.hand_mode_cycle = ["right", "left", "auto", "multi_keyboard"]
         self._hand_mode_idx = self.hand_mode_cycle.index(self.hand_mode)
 
-        self.mouse_mode = "DISABLED" # DISABLED/CAMERA/CURSOR
-        self.show_camera_view = True  # toggle OpenCV window on/off
+        self.swap_handedness = False
 
-        # Camera adjustment settings (GUI-controlled)
-        self.cam_contrast = 1.0      # 0.5 .. 3.0
-        self.cam_brightness = 0      # -100 .. +100
+        self.cam_contrast = 1.0
+        self.cam_brightness = 0
         self.cam_grayscale = False
-        self.cam_apply_to_tracking = False  # recommended False
+        self.cam_apply_to_tracking = False
 
-        # joystick (CAMERA mode)
         self._joy_gain = 70.0
         self._joy_alpha = 0.18
         self._joy_deadzone = 0.04
@@ -671,16 +747,42 @@ class GestureControllerApp:
         self._joy_sm_x = 0.0
         self._joy_sm_y = 0.0
 
-        # KNN
+        self.action_map = load_actions_from_profile_json(PROFILE_JSON_PATH)
+        self.prev_gesture_by_hand = {"Left": "none", "Right": "none"}
+        self.prev_hold_action_by_hand = {"Left": None, "Right": None}
+        self.MULTI_KEYBOARD_ONLY = True
+
+        self.cap = None
+        self.hand_landmarker = None
+        self.classifier = None
+        self._mp_start_t = time.perf_counter()
+
+        self.gui = ClickTesterGUI(self) if self.enable_gui else None
+
+        if self.enable_camera:
+            self._init_camera_and_models()
+            self._init_monitor()
+
+    def _init_monitor(self):
+        # if don't need cursor mode immediately, can skip prompting
+        self.monitor = None
+        screen_w, screen_h = pyautogui.size()
+        self.screen_x = 0
+        self.screen_y = 0
+        self.screen_w = screen_w
+        self.screen_h = screen_h
+
+
+    def _init_camera_and_models(self):
+        self.cap = cv2.VideoCapture(0)
+        if not self.cap.isOpened():
+            raise RuntimeError("[CAM] Failed to open camera.")
+
         self.classifier = KNNGestureClassifier()
         self.classifier.load_dataset()
 
-        # -------- MediaPipe Tasks: HandLandmarker (0.10.30+) --------
         if not os.path.isfile(MODEL_TASK_PATH):
-            raise FileNotFoundError(
-                f"[MODEL] Missing model file: {MODEL_TASK_PATH}\n"
-                "Place hand_landmarker.task at: data/models/hand_landmarker.task"
-            )
+            raise FileNotFoundError(f"Missing model file: {MODEL_TASK_PATH}")
 
         base_options = mp_python.BaseOptions(model_asset_path=MODEL_TASK_PATH)
         options = vision.HandLandmarkerOptions(
@@ -691,47 +793,8 @@ class GestureControllerApp:
             min_hand_presence_confidence=0.55,
             min_tracking_confidence=0.55,
         )
-
         self.hand_landmarker = vision.HandLandmarker.create_from_options(options)
         self._mp_start_t = time.perf_counter()
-
-
-        self.cap = cv2.VideoCapture(0)
-
-        # screen center for CURSOR mode
-        self.monitor = select_monitor()
-
-        if self.monitor:
-            self.screen_x = self.monitor.x
-            self.screen_y = self.monitor.y
-            self.screen_w = self.monitor.width
-            self.screen_h = self.monitor.height
-        else:
-            # fallback to full desktop
-            screen_w, screen_h = pyautogui.size()
-            self.screen_x = 0
-            self.screen_y = 0
-            self.screen_w = screen_w
-            self.screen_h = screen_h
-
-        self.screen_cx = self.screen_x + self.screen_w // 2
-        self.screen_cy = self.screen_y + self.screen_h // 2
-
-
-        # LOAD ACTIONS FROM profile_1.json (NEW loader)
-        self.action_map = load_actions_from_profile_json(PROFILE_JSON_PATH)
-
-        self.gui = ClickTesterGUI(self)
-
-        # Per-hand state (for multi-keyboard mode and also safe for normal modes)
-        self.prev_gesture_by_hand = {"Left": "none", "Right": "none"}
-        self.prev_hold_action_by_hand = {"Left": None, "Right": None}
-
-        # Optional: in multi_keyboard mode, only allow Keyboard actions (recommended)
-        self.MULTI_KEYBOARD_ONLY = True
-
-        self.show_hand_vectors = True
-
 
     def set_hand_mode(self, mode: str):
         self.hand_mode = mode
@@ -740,6 +803,21 @@ class GestureControllerApp:
         self.mouse_mode = mode
         if mode == "DISABLED":
             self._reset_mouse_state()
+
+        if mode == "CURSOR" and self.monitor is None:
+            self.monitor = select_monitor()
+            if self.monitor:
+                self.screen_x = self.monitor.x
+                self.screen_y = self.monitor.y
+                self.screen_w = self.monitor.width
+                self.screen_h = self.monitor.height
+            else:
+                screen_w, screen_h = pyautogui.size()
+                self.screen_x = 0
+                self.screen_y = 0
+                self.screen_w = screen_w
+                self.screen_h = screen_h
+
 
     def reload_profile_actions(self):
         self.action_map = load_actions_from_profile_json(PROFILE_JSON_PATH)
@@ -779,7 +857,7 @@ class GestureControllerApp:
 
         pyautogui.moveTo(x, y)
 
-     # ---------- keyboard helpers ----------
+    # ---------- keyboard helpers ----------
 
     def _process_action_for_hand(self, hand_label: str, current_gesture: str):
         """
@@ -889,11 +967,66 @@ class GestureControllerApp:
 
         return pred_label
 
+    def start_camera_thread(self):
+        import threading
+        self._cam_thread = threading.Thread(target=self.run, daemon=True)
+        self._cam_thread.start()
+
+    def stop(self):
+        self.running = False
+        # release resources safely from run() cleanup
+
+    def set_camera_visible(self, visible: bool):
+        self.want_camera_view = bool(visible)
+
+    def toggle_camera_visible(self):
+        self.want_camera_view = not self.want_camera_view
+
+    def toggle_clicker_gui(self):
+        if self.gui is None:
+            return
+        # Tk calls must be scheduled on Tk thread
+        def _do():
+            if self.gui.is_visible():
+                self.gui.hide()
+            else:
+                self.gui.show()
+        try:
+            self.gui.root.after(0, _do)
+        except Exception:
+            pass
 
     # ---------- main loop ----------
 
     def run(self):
+        if not self.enable_camera:
+            print("[RUN] Camera disabled; run() will not start.")
+            return
+
         while self.running:
+            # ---- apply pending requests (main thread) ----
+            if self._req_toggle_camera:
+                self._req_toggle_camera = False
+                self.want_camera_view = not self.want_camera_view
+                print("[MAIN] want_camera_view =", self.want_camera_view, flush=True)
+
+            if self._req_toggle_gui:
+                self._req_toggle_gui = False
+                if self.gui is not None:
+                    if self.gui.is_visible():
+                        self.gui.hide()
+                    else:
+                        self.gui.show()
+                print("[MAIN] toggled gui", flush=True)
+
+            # Pump Tk events (since you are NOT calling mainloop())
+            if self.gui is not None:
+                try:
+                    self.gui.root.update_idletasks()
+                    self.gui.root.update()
+                except Exception:
+                    pass
+
             ret, frame_raw = self.cap.read()
             if not ret:
                 continue
@@ -927,9 +1060,6 @@ class GestureControllerApp:
             action_hand = None
 
             # track best point gesture for auto
-            best_point_conf = 0.0
-            best_point_hand = None
-
             detected = []
             best_point_conf = 0.0
             best_point_hand = None
@@ -940,7 +1070,6 @@ class GestureControllerApp:
                     # handedness[i] is a list of Category; take top category
                     raw_label = res.handedness[i][0].category_name
                     label = self.normalize_handedness(raw_label)
-                    label = normalize_handedness(label, flipped_for_detection=True)
 
                     # compute both normal + mirrored predictions, choose best
                     # --- Base prediction (no mirroring) ---
@@ -1099,17 +1228,18 @@ class GestureControllerApp:
             mode_text = f"Hand Mode: {self.hand_mode} | Mouse Mode: {self.mouse_mode} | Monitor: {mon_txt}"
 
             # Thread-safe UI update
-            try:
-                self.gui.root.after(
-                    0,
-                    self.gui.update_status,
-                    mode_text,
-                    gesture_text,
-                    f"Mapped: {mapped_text}",
-                    f"Fired: {fired_text}"
-                )
-            except Exception:
-                pass
+            if self.gui is not None:
+                try:
+                    self.gui.root.after(
+                        0,
+                        self.gui.update_status,
+                        mode_text,
+                        gesture_text,
+                        f"Mapped: {mapped_text}",
+                        f"Fired: {fired_text}"
+                    )
+                except Exception:
+                    pass
 
             if self.want_camera_view:
                 if not self._camera_window_open:
@@ -1156,10 +1286,10 @@ class GestureControllerApp:
                 self.toggle_camera_view()
 
 
-
-        # camera thread cleanup
+        # ---- cleanup ----
         try:
-            self.cap.release()
+            if self.cap is not None:
+                self.cap.release()
         except Exception:
             pass
 
@@ -1169,30 +1299,40 @@ class GestureControllerApp:
             pass
 
         try:
-            self.landmarker.close()  # MediaPipe Tasks supports close()
+            if self.hand_landmarker is not None:
+                self.hand_landmarker.close()
         except Exception:
             pass
 
-        if self._camera_window_open:
-            try:
-                cv2.destroyWindow(self._window_name)
-            except Exception:
-                pass
-
-        
-        self.cap.release()
-        cv2.destroyAllWindows()
+        self._camera_window_open = False
 
 
 if __name__ == "__main__":
-    app = GestureControllerApp()
+    import argparse
 
-    # Run OpenCV loop in a background thread so Tkinter can stay responsive
-    t = threading.Thread(target=app.run, daemon=True)
-    t.start()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--background", action="store_true")
+    parser.add_argument("--port", type=int, default=50555)
+    args = parser.parse_args()
 
-    # Start GUI (main thread)
-    app.gui.root.mainloop()
+    # ONE app only
+    app = GestureControllerApp(enable_gui=True, enable_camera=True)
 
-    # When GUI exits, stop the camera loop
+    # Start hidden if background mode
+    if args.background:
+        if app.gui is not None:
+            app.gui.hide()
+        app.set_camera_visible(False)
+
+    # ONE server only
+    cmd_server = CommandServer(app, port=args.port)
+    cmd_server.start()
+
+    # Run OpenCV loop in MAIN THREAD (important on Windows)
+    app.run()
+
+    # cleanup flag
     app.running = False
+
+
+
