@@ -1,4 +1,5 @@
 from . import resources_rc
+#import resources_rc
 import keyboard
 import subprocess
 import sys
@@ -204,6 +205,7 @@ class MainWindow(QWidget):
             
             #add scroll area to new tab
             scroll_container = QScrollArea(new_tab)
+            scroll_container.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
             scroll_container.setGeometry(99,150,1599, 962)
             scroll_container.setGeometry(max(x,0), scroll_container.y(), max(geom.width()-scroll_container.x(),0), max(962+geom.height()-1183, 0))
             scroll_content = scroll_container.widget()
