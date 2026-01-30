@@ -4,18 +4,29 @@ from Profiles import Profile
 from Actions import Actions
 
 class ProfileManager:
-    def __init__(self, profileNames=None):
+    def __init__(self, profileNames=None, base_dir=None):
         self._profileNames = profileNames if profileNames else []
+        # Default base_dir = folder that contains ProfileManager.py (same place as prototypeV2)
+        self._base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
+
+    def _path(self, filename: str) -> str:
+        # Put all manager/profile json files next to ProfileManager.py
+        return os.path.join(self._base_dir, filename)
 
     @staticmethod
     def readFile(filename):
-        with open(filename, "r") as f:
+        # Interpret filename relative to ProfileManager.py location
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        fullpath = os.path.join(base_dir, filename)
+
+        with open(fullpath, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return ProfileManager(data["profileNames"])
+        return ProfileManager(data["profileNames"], base_dir=base_dir)
 
     def writeFile(self, filename):
         data = {"profileNames": self._profileNames}
-        with open(filename, "w") as f:
+        fullpath = self._path(filename)
+        with open(fullpath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
     def deleteProfile(self, profileName):
@@ -39,12 +50,10 @@ class ProfileManager:
             self._profileNames.append(profileName)
             self.writeFile("profileManager.json")
             new_profile = Profile(profileName)
-            new_profile.writeFile(f"profile_{profileName}.json")
+            new_profile.writeFile(self._path(f"profile_{profileName}.json"))
             print(f"[OK] Profile '{profileName}' created.")
             return True
-        else:
-            return False
-        
+        return False
 
     def renameProfile(self, oldName, newName):
         if oldName not in self._profileNames:
@@ -57,14 +66,17 @@ class ProfileManager:
         old_filename = f"profile_{oldName}.json"
         new_filename = f"profile_{newName}.json"
 
-        if not os.path.exists(old_filename):
-            print(f"[Error] File '{old_filename}' does not exist!")
+        old_path = self._path(old_filename)
+        new_path = self._path(new_filename)
+
+        if not os.path.exists(old_path):
+            print(f"[Error] File '{old_path}' does not exist!")
             return
 
         profile = self.loadProfile(oldName)
         profile._Profile_ID = newName
-        profile.writeFile(new_filename)
-        os.remove(old_filename)
+        profile.writeFile(new_path)
+        os.remove(old_path)
 
         self._profileNames.remove(oldName)
         self._profileNames.append(newName)
@@ -76,18 +88,17 @@ class ProfileManager:
 
     def loadProfile(self, profileName):
         filename = f"profile_{profileName}.json"
-        if not os.path.exists(filename):
-            print(f"[Error] File '{filename}' does not exist!")
+        fullpath = self._path(filename)
+        if not os.path.exists(fullpath):
+            print(f"[Error] File '{fullpath}' does not exist!")
             return None
-        return Profile.readFile(filename)
+        return Profile.readFile(fullpath)
 
     def getProfile(self, profileName):
-        """
-        Returns the Profile object if it exists in manager, otherwise None.
-        """
         if profileName in self._profileNames:
             return self.loadProfile(profileName)
         return None
+
 
 #testing script
 if __name__ == "__main__":

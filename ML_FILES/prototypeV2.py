@@ -681,25 +681,23 @@ class CommandServer(threading.Thread):
                         data = conn.recv(1024).decode("utf-8", errors="ignore").strip()
                     except Exception:
                         data = ""
+
                     if data == "PING":
                         conn.sendall(b"PONG\n")
-                    if data == "TOGGLE_CAMERA":
-                        try:
-                            conn.sendall(b"OK\n")
-                        except Exception as e:
-                            print("[CMD] sendall failed:", e, flush=True)
+                        continue
+
+                    elif data == "TOGGLE_CAMERA":
+                        conn.sendall(b"OK\n")
                         self.app._req_toggle_camera = True
+                        continue
 
                     elif data == "TOGGLE_GUI":
-                        try:
-                            conn.sendall(b"OK\n")
-                        except Exception as e:
-                            print("[CMD] sendall failed:", e, flush=True)
+                        conn.sendall(b"OK\n")
                         self.app._req_toggle_gui = True
+                        continue
 
                     elif data == "QUIT":
                         self.app.running = False
-                        # close Tk too (if exists)
                         if self.app.gui is not None:
                             try:
                                 self.app.gui.root.after(0, self.app.gui.root.destroy)
@@ -707,8 +705,26 @@ class CommandServer(threading.Thread):
                                 pass
                         conn.sendall(b"OK\n")
                         self._stop_flag = True
+                        continue
+                    elif data.startswith("CREATE_GESTURE"):
+                        # expected: "CREATE_GESTURE gesture_name"
+                        parts = data.split(maxsplit=1)
+                        if len(parts) < 2 or not parts[1].strip():
+                            conn.sendall(b"ERR Empty gesture name\n")
+                            continue
+
+                        gesture_name = parts[1].strip()
+
+                        # Tell main loop to enter collect mode (DO NOT run collection in this thread)
+                        self.app._collect_req_name = gesture_name
+
+                        conn.sendall(b"OK\n")
+                        continue
+
                     else:
                         conn.sendall(b"UNKNOWN\n")
+                        continue
+
 
 # =================================================
 #   MAIN APP
@@ -752,6 +768,21 @@ class GestureControllerApp:
         self.prev_hold_action_by_hand = {"Left": None, "Right": None}
         self.MULTI_KEYBOARD_ONLY = True
 
+        self.collect_mode = False
+        self.collect_name = None
+        self.collect_running = False
+        self.collect_paused = True   # SPACE toggles
+        self.collect_cancelled = False
+        self.collect_done = False
+
+        self.collect_target = 200
+        self.collect_saved = 0
+        self.collect_interval = 0.1
+        self._collect_last_save_t = 0.0
+
+        self._collect_req_name = None
+        self._collect_status = "IDLE"   # IDLE / RUNNING / DONE / CANCELLED / ERR:...
+
         self.cap = None
         self.hand_landmarker = None
         self.classifier = None
@@ -759,9 +790,38 @@ class GestureControllerApp:
 
         self.gui = ClickTesterGUI(self) if self.enable_gui else None
 
+        # --- collector mode (like custom_manager) ---
+        self.collect_mode = "TWO_HAND"     # "TWO_HAND" or "ONE_HAND"
+        self.collect_phase = "LEFT"        # only used in TWO_HAND (LEFT then RIGHT)
+        self.collect_target_one = "LEFT"   # only used in ONE_HAND (LEFT/RIGHT)
+        self.collect_saved_phase = {"LEFT": 0, "RIGHT": 0}
+
+        self.collect_auto_pause_on_lost = True
+        self.collect_waiting_for_hand = False
+        self.collect_locked_label = None  # "Left"/"Right" once capture starts
+
+
+        self.suspend_actions = False
+        self._prev_mouse_mode = None
+        self._prev_hand_mode = None
+
+
         if self.enable_camera:
             self._init_camera_and_models()
             self._init_monitor()
+
+    def request_collect_gesture(self, name: str):
+        name = (name or "").strip()
+        if not name:
+            return False, "Empty gesture name"
+        if self.collect_running:
+            return False, "Collector already running"
+        self._collect_req_name = name
+        self._collect_status = "STARTING"
+        return True, "Starting"
+
+    def get_collect_status(self) -> str:
+        return self._collect_status
 
     def _init_monitor(self):
         # if don't need cursor mode immediately, can skip prompting
@@ -821,6 +881,219 @@ class GestureControllerApp:
 
     def reload_profile_actions(self):
         self.action_map = load_actions_from_profile_json(PROFILE_JSON_PATH)
+
+    def request_collect_gesture(self, name: str):
+        name = (name or "").strip()
+        if not name:
+            return False, "Empty gesture name"
+        if self.collect_running:
+            return False, "Collector already running"
+
+        self._collect_req_name = name
+        self._collect_status = "STARTING"
+        return True, "Starting"
+
+    def get_collect_status(self) -> str:
+        return self._collect_status
+
+    def _start_collect_mode(self, gesture_name: str):
+        self.collect_running = True
+        self.collect_name = gesture_name
+
+        # reset counters
+        self.collect_saved = 0
+        self.collect_saved_phase = {"LEFT": 0, "RIGHT": 0}
+        self.collect_phase = "LEFT"
+
+        # default mode
+        self.collect_mode = "TWO_HAND"      # start in TWO_HAND like custom_manager
+        self.collect_target_one = "LEFT"    # used only if ONE_HAND
+
+        self.collect_paused = True          # SPACE to start
+        self.collect_cancelled = False
+        self.collect_done = False
+        self._collect_last_save_t = 0.0
+        self._collect_status = "RUNNING"
+
+        print(f"[COLLECT] Ready: {gesture_name} | Mode={self.collect_mode} (S toggles) | SPACE start/pause | Q cancel")
+
+        # stop actions from injecting keys during collect
+        self.suspend_actions = True
+
+        # freeze runtime modes during collect
+        self._prev_mouse_mode = self.mouse_mode
+        self._prev_hand_mode = self.hand_mode
+        self.mouse_mode = "DISABLED"   # prevent cursor/mouse injection during collect
+
+        # stop any holds immediately
+        for lbl in ["Left", "Right"]:
+            prev_hold = self.prev_hold_action_by_hand.get(lbl)
+            if prev_hold is not None:
+                try:
+                    prev_hold.stopHold()
+                except Exception:
+                    pass
+            self.prev_hold_action_by_hand[lbl] = None
+            self.prev_gesture_by_hand[lbl] = "none"
+
+
+    def _collect_step(self, detected):
+        if self.collect_done or self.collect_cancelled:
+            return
+
+        want = self._collect_want_label()  # "Left"/"Right"
+
+        # If paused, we still update waiting message but never save
+        if self.collect_paused:
+            self.collect_waiting_for_hand = False
+            return
+
+        # Once we start/resume, lock to wanted label if not locked yet
+        if self.collect_locked_label is None:
+            self.collect_locked_label = want
+
+        desired = self.collect_locked_label
+
+        # Find the correct hand only (never save wrong hand)
+        picked = None
+        for (label, hand_lm, pred, conf) in detected:
+            if label == desired:
+                picked = hand_lm
+                break
+
+        # If correct hand not found: auto-pause but DO NOT reset counts
+        if picked is None:
+            self.collect_waiting_for_hand = True
+            if self.collect_auto_pause_on_lost:
+                self.collect_paused = True
+            return
+
+        self.collect_waiting_for_hand = False
+
+        # Throttle AFTER we have the correct hand
+        now = time.perf_counter()
+        if (now - self._collect_last_save_t) < self.collect_interval:
+            return
+
+        # Save feature vector
+        vec = landmarks_to_feature_vector(picked, mirror=False)
+        out_dir = os.path.join(SCRIPT_DIR, "data", "tmp_collect", self.collect_name)
+        os.makedirs(out_dir, exist_ok=True)
+
+        # Choose filename based on mode
+        if self.collect_mode == "ONE_HAND":
+            idx = self.collect_saved
+            fname = f"{self.collect_name}_{desired}_{idx:04d}.npy"
+        else:
+            idx = self.collect_saved_phase["LEFT"] if self.collect_phase == "LEFT" else self.collect_saved_phase["RIGHT"]
+            fname = f"{self.collect_name}_{self.collect_phase}_{idx:04d}.npy"
+
+        np.save(os.path.join(out_dir, fname), vec)
+
+        # Update counters
+        self._collect_last_save_t = now
+
+        if self.collect_mode == "ONE_HAND":
+            self.collect_saved += 1
+            if self.collect_saved >= self.collect_target:
+                self.collect_done = True
+                self.collect_running = False
+                self._finish_collect_success()
+        else:
+            per = self.collect_target // 2
+            if self.collect_phase == "LEFT":
+                self.collect_saved_phase["LEFT"] += 1
+                if self.collect_saved_phase["LEFT"] >= per:
+                    self.collect_phase = "RIGHT"
+                    self.collect_paused = True           # pause between phases
+                    self.collect_locked_label = None     # relock for right
+            else:
+                self.collect_saved_phase["RIGHT"] += 1
+                if self.collect_saved_phase["RIGHT"] >= per:
+                    self.collect_done = True
+                    self.collect_running = False
+                    self._finish_collect_success()
+
+
+    def _finish_collect_success(self):
+        try:
+            gestures = load_gesture_list(GESTURELIST_JSON_PATH)
+            if self.collect_name not in gestures:
+                gestures.append(self.collect_name)
+                with open(GESTURELIST_JSON_PATH, "w", encoding="utf-8") as f:
+                    json.dump(gestures, f, indent=4)
+
+            from custom_manager import PathConfig, CombinedDatasetManager
+            paths = PathConfig()
+            dataset = CombinedDatasetManager(paths)
+
+            tmp_folder = os.path.join(SCRIPT_DIR, "data", "tmp_collect", self.collect_name)
+            dataset.add_new_gesture_from_folder(self.collect_name, tmp_folder)
+
+            if self.classifier:
+                self.classifier.load_dataset()
+
+            self._collect_status = "DONE"
+            print(f"[COLLECT] DONE: {self.collect_name}")
+
+        except Exception as e:
+            self._collect_status = f"ERR: {e}"
+            print("[COLLECT] ERROR:", e)
+
+        finally:
+            self.collect_running = False
+            self.collect_done = True
+
+        self.suspend_actions = False
+        if self._prev_mouse_mode is not None:
+            self.mouse_mode = self._prev_mouse_mode
+        if self._prev_hand_mode is not None:
+            self.hand_mode = self._prev_hand_mode
+
+
+    def _draw_collect_overlay(self, frame):
+        mode = self.collect_mode
+        want = self._collect_want_label()
+
+        if mode == "ONE_HAND":
+            prog = f"{self.collect_saved}/{self.collect_target}"
+            extra = f"Target: {self.collect_target_one} (D toggles)"
+        else:
+            per = self.collect_target // 2
+            prog = f"L {self.collect_saved_phase['LEFT']}/{per} | R {self.collect_saved_phase['RIGHT']}/{per}"
+            extra = f"Phase: {self.collect_phase}"
+
+        cv2.putText(frame, f"COLLECT MODE: {self.collect_name}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0,255,0), 2)
+        cv2.putText(frame, f"Mode: {mode}  (S toggles)", (10, 65),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+        cv2.putText(frame, extra, (10, 100),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+        cv2.putText(frame, f"Saved: {prog}", (10, 135),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+        cv2.putText(frame, f"Need: {want}", (10, 170),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0,255,255), 2)
+
+        cv2.putText(frame, "SPACE start/pause | Q cancel | S mode | D hand(1-hand)", (10, 205),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0,0,255), 2)
+
+        if self.collect_paused:
+            cv2.putText(frame, "PAUSED", (10, 240),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,165,255), 2)
+            
+        if self.collect_waiting_for_hand and not self.collect_paused:
+            cv2.putText(frame, "WAITING FOR HAND...", (10, 275),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,165,255), 2)
+
+
+            
+    def _collect_want_label(self) -> str:
+        # MediaPipe labels are "Left"/"Right"
+        if self.collect_mode == "ONE_HAND":
+            return "Left" if self.collect_target_one == "LEFT" else "Right"
+        else:
+            return "Left" if self.collect_phase == "LEFT" else "Right"
+
 
     # ---------- mouse helpers ----------
 
@@ -1004,6 +1277,7 @@ class GestureControllerApp:
             return
 
         while self.running:
+
             # ---- apply pending requests (main thread) ----
             if self._req_toggle_camera:
                 self._req_toggle_camera = False
@@ -1018,6 +1292,12 @@ class GestureControllerApp:
                     else:
                         self.gui.show()
                 print("[MAIN] toggled gui", flush=True)
+
+            if self._collect_req_name is not None:
+                name = self._collect_req_name
+                self._collect_req_name = None
+                self._start_collect_mode(name)
+
 
             # Pump Tk events (since you are NOT calling mainloop())
             if self.gui is not None:
@@ -1049,9 +1329,6 @@ class GestureControllerApp:
 
             timestamp_ms = int((time.perf_counter() - self._mp_start_t) * 1000)
 
-            res = self.hand_landmarker.detect_for_video(mp_image, timestamp_ms)
-
-
             # Decide what you want to display
             frame_display = self._apply_camera_adjustments(frame.copy())
 
@@ -1063,6 +1340,8 @@ class GestureControllerApp:
             detected = []
             best_point_conf = 0.0
             best_point_hand = None
+
+            res = self.hand_landmarker.detect_for_video(mp_image, timestamp_ms)
 
             if res.hand_landmarks and res.handedness:
                 for i in range(min(len(res.hand_landmarks), len(res.handedness))):
@@ -1099,6 +1378,10 @@ class GestureControllerApp:
                     if pred == "point" and conf > best_point_conf:
                         best_point_conf = conf
                         best_point_hand = (label, hand_lm, pred, conf)
+
+            if self.collect_running:
+                self._collect_step(detected)
+
 
             # ---- draw landmarks (Tasks API) ----
             if self.show_hand_vectors and detected:
@@ -1198,12 +1481,23 @@ class GestureControllerApp:
             mapped_texts = []
             fired_texts = []
 
-            for (label, _, pred, conf) in action_hands:
-                current_gesture = pred if conf >= GESTURE_CONF_THRESHOLD else "none"
-                mapped_text, fired_text = self._process_action_for_hand(label, current_gesture)
+            if not self.suspend_actions:
+                for (label, _, pred, conf) in action_hands:
+                    current_gesture = pred if conf >= GESTURE_CONF_THRESHOLD else "none"
+                    mapped_text, fired_text = self._process_action_for_hand(label, current_gesture)
+                    mapped_texts.append(f"{label}: {mapped_text}")
+                    fired_texts.append(f"{label}: {fired_text}")
+            else:
+                for lbl in ["Left", "Right"]:
+                    prev_hold = self.prev_hold_action_by_hand.get(lbl)
+                    if prev_hold is not None:
+                        try:
+                            prev_hold.stopHold()
+                        except Exception:
+                            pass
+                    self.prev_hold_action_by_hand[lbl] = None
+                    self.prev_gesture_by_hand[lbl] = "none"
 
-                mapped_texts.append(f"{label}: {mapped_text}")
-                fired_texts.append(f"{label}: {fired_text}")
 
             # UI: show both hands in multi_keyboard, else show single current gesture
             if self.hand_mode == "multi_keyboard":
@@ -1248,7 +1542,8 @@ class GestureControllerApp:
                     except Exception:
                         pass
                     self._camera_window_open = True
-
+                if self.collect_running:
+                    self._draw_collect_overlay(frame_display)
                 cv2.imshow(self._window_name, frame_display)
                 k = cv2.waitKey(1) & 0xFF
 
@@ -1265,26 +1560,77 @@ class GestureControllerApp:
                 time.sleep(0.01)
                 k = 255
 
-            if k == ord('q'):
-                # Quit safely
-                self.running = False
+            # ---------- KEY HANDLING (SAFE & EXTENDABLE) ----------
+            handled = False
 
-            elif k == ord('r'):
-                # Reload profile
-                self.reload_profile_actions()
+            # ===== 1) Gesture collection mode (highest priority) =====
+            if self.collect_running:
+                if k == 32:  # SPACE
+                    self.collect_paused = not self.collect_paused
+                    if not self.collect_paused:
+                        self.collect_locked_label = None          # allow relock
+                    print("[COLLECT]", "PAUSED" if self.collect_paused else "RESUMED")
+                    handled = True
 
-            elif k == ord('p'):
-                # Cycle hand mode
-                self.cycle_hand_mode()
 
-            elif k == ord('v'):
-                # Toggle hand vectors
-                self.toggle_hand_vectors()
+                elif k == ord('q'):
+                    # cancel collection ONLY (do NOT quit app)
+                    self.suspend_actions = False
+                    if self._prev_mouse_mode is not None:
+                        self.mouse_mode = self._prev_mouse_mode
+                    if self._prev_hand_mode is not None:
+                        self.hand_mode = self._prev_hand_mode
+                    self.collect_locked_label = None
+                    print("[COLLECT] CANCELLED")
+                    handled = True
 
-            elif k == ord('c'):
-                # Toggle camera view
-                self.toggle_camera_view()
+                elif k == ord('s'):
+                    self.collect_mode = "ONE_HAND" if self.collect_mode == "TWO_HAND" else "TWO_HAND"
 
+                    # reset progress
+                    self.collect_saved = 0
+                    self.collect_saved_phase = {"LEFT": 0, "RIGHT": 0}
+                    self.collect_phase = "LEFT"
+
+                    # IMPORTANT: force pause + reset timer so next frame can't instantly save
+                    self.collect_paused = True
+                    self._collect_last_save_t = time.perf_counter()
+                    self.collect_locked_label = None
+
+                    print(f"[COLLECT] Mode switched to {self.collect_mode}. Reset. Press SPACE.")
+                    handled = True
+
+
+                elif k == ord('d'):
+                    if self.collect_mode == "ONE_HAND":
+                        self.collect_target_one = "RIGHT" if self.collect_target_one == "LEFT" else "LEFT"
+                        self.collect_saved = 0
+
+                        # IMPORTANT: force pause + reset timer
+                        self.collect_paused = True
+                        self._collect_last_save_t = time.perf_counter()
+                        self.collect_locked_label = None
+
+                        print(f"[COLLECT] Target switched to {self.collect_target_one}. Reset. Press SPACE.")
+                        handled = True
+
+
+            # ===== 2) Normal runtime shortcuts (always available) =====
+            if not handled:
+                if k == ord('q'):
+                    self.running = False
+
+                elif k == ord('r'):
+                    self.reload_profile_actions()
+
+                elif k == ord('p'):
+                    self.cycle_hand_mode()   # <-- your 1-hand / 2-hand / auto logic
+
+                elif k == ord('v'):
+                    self.toggle_hand_vectors()
+
+                elif k == ord('c'):
+                    self.toggle_camera_view()
 
         # ---- cleanup ----
         try:

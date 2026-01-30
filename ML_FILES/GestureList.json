@@ -5,5 +5,6 @@
     "turn_right",
     "neutral",
     "JumpGesture",
-    "MoveGesture"
+    "MoveGesture",
+    "test"
 ]

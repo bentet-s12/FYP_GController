@@ -794,6 +794,7 @@ class CombinedDatasetManager:
         self.save_landmark_dataset(X, y2, classes2)
 
 
+
 # ===================== OLD MAIN (COMMENTED OUT) =====================
 # def main():
 #     paths = PathConfig()
@@ -1147,6 +1148,44 @@ def main():
         else:
             print("Invalid option.")
 
+# For file linking
+def create_gesture_programmatic(gesture_name: str, dataset_size: int = 200) -> tuple[bool, str]:
+            gesture_name = (gesture_name or "").strip()
+            if not gesture_name:
+                return False, "Empty gesture name"
+
+            paths = PathConfig()
+            gesture_store = GestureListStore(paths.BASE_DIR)
+            dataset = CombinedDatasetManager(paths)
+            collector = CustomGestureCollector(dataset_size=dataset_size, open_after=False)
+
+            existing = gesture_store.load()
+            already_exists = gesture_name in existing
+
+            out_folder = None
+            try:
+                out_folder = tempfile.mkdtemp(prefix=f"{gesture_name}_")
+                ok = collector.collect_gesture(gesture_name, out_folder)  # SPACE start, Q cancel
+                if not ok:
+                    return False, "Cancelled by user"
+
+                # commit only after success
+                if not already_exists:
+                    gesture_store.add(gesture_name)
+
+                dataset_label = gesture_name
+                if hasattr(collector, "last_collection_meta") and collector.last_collection_meta:
+                    dataset_label = collector.last_collection_meta.get("dataset_label", gesture_name)
+
+                dataset.add_new_gesture_from_folder(dataset_label, out_folder)
+                return True, f"Created {gesture_name} (dataset_label={dataset_label})"
+
+            except Exception as e:
+                return False, str(e)
+
+            finally:
+                if out_folder:
+                    shutil.rmtree(out_folder, ignore_errors=True)
 
 if __name__ == "__main__":
     main()
