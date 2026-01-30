@@ -1,5 +1,4 @@
 from . import resources_rc
-#import resources_rc
 import keyboard
 import subprocess
 import sys
