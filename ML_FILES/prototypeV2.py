@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import shutil
 import numpy as np
 import cv2
 import tkinter as tk
@@ -39,15 +40,63 @@ DIRECTIONAL_GESTURES = {
     "thumbs_left",
     "thumbs_right",
 }
+SW_RESTORE = 9
+HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
+
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_SHOWWINDOW = 0x0040
+
 
 
 # ================== CURSOR / CAMERA MOUSE ==================
+INPUT_MOUSE = 0
+MOUSEEVENTF_MOVE = 0x0001
 
 # Win32 SendInput for relative mouse movement (CAMERA mode)
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 
-INPUT_MOUSE = 0
-MOUSEEVENTF_MOVE = 0x0001
+SW_RESTORE = 9
+HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
+
+SWP_NOSIZE = 0x0001
+SWP_NOMOVE = 0x0002
+SWP_SHOWWINDOW = 0x0040
+
+user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+user32.FindWindowW.restype = wintypes.HWND
+
+user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.ShowWindow.restype = wintypes.BOOL
+
+user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+user32.SetForegroundWindow.restype = wintypes.BOOL
+
+user32.SetWindowPos.argtypes = [
+    wintypes.HWND, wintypes.HWND,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ctypes.c_uint
+]
+user32.SetWindowPos.restype = wintypes.BOOL
+
+
+def bring_window_to_front(window_title: str) -> bool:
+    hwnd = user32.FindWindowW(None, window_title)
+    if not hwnd:
+        return False
+
+    user32.ShowWindow(hwnd, SW_RESTORE)
+
+    user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+    user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW)
+
+    user32.SetForegroundWindow(hwnd)
+    return True
+
 
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [("dx", wintypes.LONG),
@@ -525,6 +574,9 @@ class ClickTesterGUI:
 
         # Bind keys globally within this Tk window (works even when buttons/sliders are focused)
         self.root.bind_all("<KeyPress>", self._on_keypress)
+        # Start hidden – only shown when toggled
+        self.root.withdraw()
+
 
 
 
@@ -608,13 +660,20 @@ class ClickTesterGUI:
         except Exception:
             pass
 
+
     def show(self):
         try:
             self.root.deiconify()
             self.root.lift()
             self.root.focus_force()
+
+            # reliable Windows raise
+            self.root.attributes("-topmost", True)
+            self.root.update_idletasks()
+            self.root.attributes("-topmost", False)
         except Exception:
             pass
+
 
     def is_visible(self):
         try:
@@ -622,6 +681,19 @@ class ClickTesterGUI:
         except Exception:
             return True
 
+    def bring_to_front(self):
+        """Bring the Tk window to the front (Windows-friendly)."""
+        try:
+            self.root.deiconify()      # un-minimize if minimized
+            self.root.lift()           # raise above other windows
+            self.root.focus_force()    # take focus (may be limited by Windows focus rules)
+
+            # Windows: briefly set topmost then revert (works very reliably)
+            self.root.attributes("-topmost", True)
+            self.root.update_idletasks()
+            self.root.attributes("-topmost", False)
+        except Exception:
+            pass
 
 
 
@@ -666,64 +738,68 @@ class CommandServer(threading.Thread):
         self._stop_flag = False
 
     def run(self):
-
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((self.host, self.port))
             s.listen(5)
+            s.settimeout(0.5)  # so thread can check stop flag periodically
+            print(f"[CMD] Listening on {self.host}:{self.port}", flush=True)
+        except Exception as e:
+            print(f"[CMD] FAILED to start on {self.host}:{self.port} -> {e}", flush=True)
+            return
+
+        with s:
             while not self._stop_flag:
                 try:
-                    conn, _ = s.accept()
-                except Exception:
+                    conn, addr = s.accept()
+                except socket.timeout:
                     continue
+                except Exception as e:
+                    print(f"[CMD] accept() error: {e}", flush=True)
+                    continue
+
                 with conn:
                     try:
+                        conn.settimeout(1.0)
                         data = conn.recv(1024).decode("utf-8", errors="ignore").strip()
-                    except Exception:
-                        data = ""
-
-                    if data == "PING":
-                        conn.sendall(b"PONG\n")
+                    except Exception as e:
+                        print(f"[CMD] recv error: {e}", flush=True)
                         continue
 
-                    elif data == "TOGGLE_CAMERA":
-                        conn.sendall(b"OK\n")
-                        self.app._req_toggle_camera = True
-                        continue
+                    print(f"[CMD] Received: {data}", flush=True)
 
-                    elif data == "TOGGLE_GUI":
-                        conn.sendall(b"OK\n")
-                        self.app._req_toggle_gui = True
-                        continue
+                    try:
+                        if data == "PING":
+                            conn.sendall(b"PONG\n")
 
-                    elif data == "QUIT":
-                        self.app.running = False
-                        if self.app.gui is not None:
-                            try:
-                                self.app.gui.root.after(0, self.app.gui.root.destroy)
-                            except Exception:
-                                pass
-                        conn.sendall(b"OK\n")
-                        self._stop_flag = True
-                        continue
-                    elif data.startswith("CREATE_GESTURE"):
-                        # expected: "CREATE_GESTURE gesture_name"
-                        parts = data.split(maxsplit=1)
-                        if len(parts) < 2 or not parts[1].strip():
-                            conn.sendall(b"ERR Empty gesture name\n")
-                            continue
+                        elif data == "TOGGLE_CAMERA":
+                            self.app._req_toggle_camera = True
+                            conn.sendall(b"OK\n")
 
-                        gesture_name = parts[1].strip()
+                        elif data == "TOGGLE_GUI":
+                            self.app._req_toggle_gui = True
+                            conn.sendall(b"OK\n")
 
-                        # Tell main loop to enter collect mode (DO NOT run collection in this thread)
-                        self.app._collect_req_name = gesture_name
+                        elif data == "QUIT":
+                            self.app.running = False
+                            self._stop_flag = True
+                            conn.sendall(b"OK\n")
 
-                        conn.sendall(b"OK\n")
-                        continue
+                        elif data.startswith("CREATE_GESTURE"):
+                            parts = data.split(maxsplit=1)
+                            if len(parts) < 2 or not parts[1].strip():
+                                conn.sendall(b"ERR Empty gesture name\n")
+                            else:
+                                self.app._collect_req_name = parts[1].strip()
+                                conn.sendall(b"OK\n")
 
-                    else:
-                        conn.sendall(b"UNKNOWN\n")
-                        continue
+                        else:
+                            conn.sendall(b"UNKNOWN\n")
+
+                    except Exception as e:
+                        print(f"[CMD] send error: {e}", flush=True)
+
 
 
 # =================================================
@@ -736,11 +812,15 @@ class GestureControllerApp:
         self.enable_gui = enable_gui
         self.enable_camera = enable_camera
         self._req_toggle_gui = False
-        
-        self.want_camera_view = True
+        self.want_gui = False          # start hidden
+        self._gui_applied = None       # tracks last applied state
+        self._raised_once = False
+
+        self.want_camera_view = False
         self._camera_window_open = False
         self._window_name = "Gesture Controller"
         self._req_toggle_camera = False
+        self._cam_window_sized = False
 
         self.hand_mode = "right"
         self.mouse_mode = "DISABLED"
@@ -789,12 +869,16 @@ class GestureControllerApp:
         self._mp_start_t = time.perf_counter()
 
         self.gui = ClickTesterGUI(self) if self.enable_gui else None
+        if self.gui is not None:
+            self.gui.hide()
+            self._gui_target_visible = False
 
         # --- collector mode (like custom_manager) ---
         self.collect_mode = "TWO_HAND"     # "TWO_HAND" or "ONE_HAND"
         self.collect_phase = "LEFT"        # only used in TWO_HAND (LEFT then RIGHT)
         self.collect_target_one = "LEFT"   # only used in ONE_HAND (LEFT/RIGHT)
         self.collect_saved_phase = {"LEFT": 0, "RIGHT": 0}
+        self._key_latch = {"q": False, "space": False, "s": False, "d": False}
 
         self.collect_auto_pause_on_lost = True
         self.collect_waiting_for_hand = False
@@ -805,10 +889,18 @@ class GestureControllerApp:
         self._prev_mouse_mode = None
         self._prev_hand_mode = None
 
+        self._gui_toggle_pending = False
+        self._gui_target_visible = False  # last requested state
+
+
 
         if self.enable_camera:
             self._init_camera_and_models()
             self._init_monitor()
+        
+        if self.gui is not None:
+            self.gui.hide()
+
 
     def request_collect_gesture(self, name: str):
         name = (name or "").strip()
@@ -899,6 +991,9 @@ class GestureControllerApp:
     def _start_collect_mode(self, gesture_name: str):
         self.collect_running = True
         self.collect_name = gesture_name
+        # FORCE camera to show immediately when collection begins
+        self.want_camera_view = True
+        self._camera_window_open = False  # force re-create window
 
         # reset counters
         self.collect_saved = 0
@@ -1016,20 +1111,23 @@ class GestureControllerApp:
 
 
     def _finish_collect_success(self):
+        tmp_folder = os.path.join(SCRIPT_DIR, "data", "tmp_collect", self.collect_name)
+
         try:
+            # 1) Register gesture name
             gestures = load_gesture_list(GESTURELIST_JSON_PATH)
             if self.collect_name not in gestures:
                 gestures.append(self.collect_name)
                 with open(GESTURELIST_JSON_PATH, "w", encoding="utf-8") as f:
                     json.dump(gestures, f, indent=4)
 
+            # 2) Merge tmp_collect → main dataset
             from custom_manager import PathConfig, CombinedDatasetManager
             paths = PathConfig()
             dataset = CombinedDatasetManager(paths)
-
-            tmp_folder = os.path.join(SCRIPT_DIR, "data", "tmp_collect", self.collect_name)
             dataset.add_new_gesture_from_folder(self.collect_name, tmp_folder)
 
+            # 3) Reload classifier
             if self.classifier:
                 self.classifier.load_dataset()
 
@@ -1039,16 +1137,25 @@ class GestureControllerApp:
         except Exception as e:
             self._collect_status = f"ERR: {e}"
             print("[COLLECT] ERROR:", e)
+            return
 
         finally:
+            # 4) CLEANUP tmp_collect
+            import shutil
+            shutil.rmtree(tmp_folder, ignore_errors=True)
+
+            # 5) Restore runtime state
             self.collect_running = False
             self.collect_done = True
+            self.suspend_actions = False
 
-        self.suspend_actions = False
-        if self._prev_mouse_mode is not None:
-            self.mouse_mode = self._prev_mouse_mode
-        if self._prev_hand_mode is not None:
-            self.hand_mode = self._prev_hand_mode
+            if self._prev_mouse_mode is not None:
+                self.mouse_mode = self._prev_mouse_mode
+            if self._prev_hand_mode is not None:
+                self.hand_mode = self._prev_hand_mode
+
+            self.collect_locked_label = None
+
 
 
     def _draw_collect_overlay(self, frame):
@@ -1268,6 +1375,66 @@ class GestureControllerApp:
             self.gui.root.after(0, _do)
         except Exception:
             pass
+    
+    def _cancel_collection(self, reason="CANCELLED"):
+        self.collect_cancelled = True
+        self.collect_running = False
+        self.collect_paused = True
+        self._collect_status = reason
+        self.collect_locked_label = None
+        print(f"[COLLECT] {reason}")
+
+    def _cancel_collect_and_cleanup(self):
+        # mark mode exit
+        self.collect_cancelled = True
+        self.collect_done = False
+        self.collect_paused = True
+
+        # cleanup tmp folder for this gesture (only if it exists)
+        if self.collect_name:
+            tmp = os.path.join(SCRIPT_DIR, "data", "tmp_collect", self.collect_name)
+            shutil.rmtree(tmp, ignore_errors=True)
+
+        # fully exit collect mode
+        self.collect_running = False
+        self._collect_status = "IDLE"
+        self.collect_locked_label = None
+        self.collect_waiting_for_hand = False
+        self._collect_req_name = None
+        self.collect_name = None
+
+    def _exit_collect_to_background(self):
+        # stop collection mode only (do not quit app)
+        self.collect_cancelled = True
+        self.collect_running = False
+        self.collect_done = False
+        self.collect_paused = True
+        self._collect_status = "IDLE"
+
+        # reset collector-specific state
+        self.collect_locked_label = None
+        self.collect_waiting_for_hand = False
+        self._collect_req_name = None
+
+        # restore normal runtime modes
+        self.suspend_actions = False
+        if self._prev_mouse_mode is not None:
+            self.mouse_mode = self._prev_mouse_mode
+            self._prev_mouse_mode = None
+        if self._prev_hand_mode is not None:
+            self.hand_mode = self._prev_hand_mode
+            self._prev_hand_mode = None
+
+        # "minimize to background" behavior
+        self.want_camera_view = False         # hides OpenCV window like your toggle
+        if self.gui is not None:
+            try:
+                self.gui.root.after(0, self.gui.hide)  # hide Tk GUI too
+            except Exception:
+                pass
+
+        print("[COLLECT] Exit to background")
+
 
     # ---------- main loop ----------
 
@@ -1286,19 +1453,27 @@ class GestureControllerApp:
 
             if self._req_toggle_gui:
                 self._req_toggle_gui = False
-                if self.gui is not None:
-                    if self.gui.is_visible():
-                        self.gui.hide()
-                    else:
-                        self.gui.show()
-                print("[MAIN] toggled gui", flush=True)
+                self.want_gui = not self.want_gui
+                print("[MAIN] want_gui =", self.want_gui, flush=True)
+
+
 
             if self._collect_req_name is not None:
                 name = self._collect_req_name
                 self._collect_req_name = None
                 self._start_collect_mode(name)
 
-
+            # Apply GUI visibility state (camera-style)
+            if self.gui is not None:
+                try:
+                    if self._gui_applied is None or self._gui_applied != self.want_gui:
+                        if self.want_gui:
+                            self.gui.show()
+                        else:
+                            self.gui.hide()
+                        self._gui_applied = self.want_gui
+                except Exception as e:
+                    print("[GUI] apply failed:", e, flush=True)
             # Pump Tk events (since you are NOT calling mainloop())
             if self.gui is not None:
                 try:
@@ -1539,26 +1714,35 @@ class GestureControllerApp:
                 if not self._camera_window_open:
                     try:
                         cv2.namedWindow(self._window_name, cv2.WINDOW_NORMAL)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print("[CV] window create failed:", e)
                     self._camera_window_open = True
+
                 if self.collect_running:
                     self._draw_collect_overlay(frame_display)
+
                 cv2.imshow(self._window_name, frame_display)
+
+                # IMPORTANT: create the real OS window first
                 k = cv2.waitKey(1) & 0xFF
 
+                # Bring to front AFTER first imshow
+                if not getattr(self, "_raised_once", False):
+                    bring_window_to_front(self._window_name)
+                    self._raised_once = True
             else:
-                # If GUI wants it hidden, close window here (camera thread)
-                if self._camera_window_open:
-                    try:
-                        cv2.destroyWindow(self._window_name)
-                    except Exception:
-                        pass
-                    self._camera_window_open = False
+                # reset the raised flag when hidden
+                self._raised_once = False
 
-                # Don’t call waitKey when no window (some builds get weird)
+                if self._camera_window_open:
+                    cv2.destroyWindow(self._window_name)
+                    self._camera_window_open = False
+                    self._cam_window_sized = False
+
+
                 time.sleep(0.01)
                 k = 255
+
 
             # ---------- KEY HANDLING (SAFE & EXTENDABLE) ----------
             handled = False
@@ -1574,15 +1758,9 @@ class GestureControllerApp:
 
 
                 elif k == ord('q'):
-                    # cancel collection ONLY (do NOT quit app)
-                    self.suspend_actions = False
-                    if self._prev_mouse_mode is not None:
-                        self.mouse_mode = self._prev_mouse_mode
-                    if self._prev_hand_mode is not None:
-                        self.hand_mode = self._prev_hand_mode
-                    self.collect_locked_label = None
-                    print("[COLLECT] CANCELLED")
+                    self._exit_collect_to_background()
                     handled = True
+
 
                 elif k == ord('s'):
                     self.collect_mode = "ONE_HAND" if self.collect_mode == "TWO_HAND" else "TWO_HAND"
@@ -1654,31 +1832,27 @@ class GestureControllerApp:
 
 
 if __name__ == "__main__":
-    import argparse
+    import argparse, traceback
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--background", action="store_true")
     parser.add_argument("--port", type=int, default=50555)
     args = parser.parse_args()
 
-    # ONE app only
-    app = GestureControllerApp(enable_gui=True, enable_camera=True)
+    try:
+        app = GestureControllerApp(enable_gui=True, enable_camera=True)
+        cmd_server = CommandServer(app, port=args.port)
+        cmd_server.start()
 
-    # Start hidden if background mode
-    if args.background:
-        if app.gui is not None:
-            app.gui.hide()
-        app.set_camera_visible(False)
+        print("[MAIN] Started. Server thread launched.", flush=True)
 
-    # ONE server only
-    cmd_server = CommandServer(app, port=args.port)
-    cmd_server.start()
+        app.run()
 
-    # Run OpenCV loop in MAIN THREAD (important on Windows)
-    app.run()
+    except Exception as e:
+        print("\n[FATAL] Crashed during startup/run:", e, flush=True)
+        traceback.print_exc()
+        input("Press Enter to exit...")
 
-    # cleanup flag
-    app.running = False
 
 
 

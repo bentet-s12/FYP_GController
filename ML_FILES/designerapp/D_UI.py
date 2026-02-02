@@ -479,9 +479,10 @@ class MainWindow(QWidget):
             resp = self.send_cmd(f"CREATE_GESTURE {gname}")
             if resp.startswith("OK"):
                 dialog.accept()
-                self.new_gesture_button_function()
+                self.new_gesture_button_function()  # refresh UI rows
             else:
                 QMessageBox.critical(self, "Create Gesture Failed", resp)
+
 
         buttons.accepted.connect(on_ok)
         buttons.rejected.connect(dialog.reject)
