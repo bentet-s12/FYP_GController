@@ -211,7 +211,8 @@ class MainWindow(QWidget):
             scroll_container.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
             scroll_container.setGeometry(99,150,1599, 962)
             scroll_container.setGeometry(max(x,0), scroll_container.y(), max(geom.width()-scroll_container.x(),0), max(962+geom.height()-1183, 0))
-            scroll_content = scroll_container.widget()
+            scroll_content = QWidget()
+            scroll_container.setWidget(scroll_content)
             scroll_layout = QVBoxLayout(scroll_content)
             scroll_layout.setAlignment(Qt.AlignTop)
             scroll_container.setWidgetResizable(True)
@@ -357,8 +358,16 @@ class MainWindow(QWidget):
         dialog.exec()
 
     def new_gesture_button_function(self):
+        button = self.sender()
+        
+        # ---- this is to locate the correct scrollarea in each tab
+        current_container = button.parent()
+        current_tab = current_container.parent()
+        current_scroll = current_tab.findChild(QScrollArea)
+        current_scroll_content = current_scroll.widget()
+        current_scroll_layout = current_scroll_content.layout()
         # Clear existing rows so you don’t duplicate every time you click "+"
-        self._clear_layout(self.scroll_layout)
+        self._clear_layout(current_scroll_layout)
 
         # Load profile actions
         from ProfileManager import ProfileManager
@@ -380,7 +389,7 @@ class MainWindow(QWidget):
 
             sub_bar_widget = QWidget()
             sub_bar_widget.setFixedHeight(150)
-            self.scroll_layout.addWidget(sub_bar_widget)
+            current_scroll_layout.addWidget(sub_bar_widget)
 
             sub_bar_frame = QFrame(sub_bar_widget)
             sub_bar_frame.setGeometry(0, 0, 1400, 125)
