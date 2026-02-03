@@ -1,7 +1,9 @@
 <RCC>
   <qresource prefix="images">
+    <file>Webcam-Video-Circle--Streamline-Core.png</file>
     <file>Definition-Search-Book--Streamline-Core.png</file>
     <file>Button-Power-1--Streamline-Core.png</file>
+    <file>Chat-Bubble-Square-Question--Streamline-Core.png</file>
     <file>Button-Play--Streamline-Core.png</file>
     <file>Add-1--Streamline-Core.png</file>
     <file>Add-Circle--Streamline-Core.png</file>
