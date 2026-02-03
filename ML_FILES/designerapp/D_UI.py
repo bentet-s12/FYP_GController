@@ -184,6 +184,7 @@ class MainWindow(QWidget):
             library_button.setIcon(QIcon(library_path))
             library_button.setIconSize(QSize(50, 50))
             library_button.setFlat(True)
+            library_button.clicked.connect(self.on_library_clicked)
             
             plus_button = QPushButton(new_four_buttons_container)
             plus_button.setGeometry(130,0,80,80)
