@@ -138,7 +138,7 @@ QTabBar::tab:last:hover {
      <property name="4_buttons_container" stdset="0">
       <bool>true</bool>
      </property>
-     <widget class="QPushButton" name="film_button">
+     <widget class="QPushButton" name="library_button">
       <property name="geometry">
        <rect>
         <x>0</x>

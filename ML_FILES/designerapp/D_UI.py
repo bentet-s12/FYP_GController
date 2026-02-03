@@ -107,7 +107,11 @@ class MainWindow(QWidget):
         self.setting_button = self.window.findChild(QPushButton, "setting_button")
         assert self.setting_button is not None, "setting_button not found (check objectName in .ui)"
         self.setting_button.clicked.connect(self.on_setting_clicked)
-
+        
+        # ---- Library button ----
+        self.library_button = self.window.findChild(QPushButton, "library_button")
+        assert self.setting_button is not None, "library_button not found (check objectName in .ui)"
+        self.library_button.clicked.connect(self.on_library_clicked)
         
         # got rid of close button for the default/first tab
         default_close_button = self.tabs.tabBar().tabButton(0, QTabBar.ButtonPosition.RightSide)
@@ -268,6 +272,89 @@ class MainWindow(QWidget):
             w = item.widget()
             if w is not None:
                 w.deleteLater()
+                
+    def on_library_clicked(self):
+        
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        rec_path = os.path.join(BASE_DIR, "resource", "Webcam-Video-Circle--Streamline-Core.png")
+        trash_path = os.path.join(BASE_DIR, "resource", "Recycle-Bin-2--Streamline-Core.png")
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Gesture Library")
+        dialog.setFixedSize(400,500)
+        dialog.setModal(True)
+        
+        top_frame = QFrame(dialog)
+        top_frame.setGeometry(0,0,400,70)
+        top_frame.setStyleSheet ("""
+        background-color: #030013                         
+                                 """)
+        
+        label_title = QLabel(top_frame)
+        label_title.setGeometry(20,20,300,31)
+        label_title.setStyleSheet ("""
+        color: #e0dde5; background: transparent;                         
+                                 """)
+        label_title.setText("Gesture Library")
+        label_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        
+        Lfont = label_title.font()
+        Lfont.setPointSize(14)
+        label_title.setFont(Lfont)
+        
+        rec_button = QPushButton(top_frame)
+        rec_button.setGeometry(340,10,50,50)
+        rec_button.setIcon(QIcon(rec_path))
+        rec_button.setIconSize(QSize(45,45))
+        rec_button.setStyleSheet ("""
+        border: none; background: transparent;                         
+                                 """)
+        
+        dialog_scroll = QScrollArea(dialog)
+        dialog_scroll.setGeometry(0,70,400,430)
+        dialog_scroll.setStyleSheet ("""
+        background: #3c384d; border: none;                          
+                                 """)
+        dialog_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        dialog_scroll_content = QWidget()
+        dialog_scroll.setWidget(dialog_scroll_content)
+        dialog_scroll_layout = QVBoxLayout(dialog_scroll_content)
+        dialog_scroll_layout.setAlignment(Qt.AlignTop)
+        dialog_scroll_layout.setContentsMargins(10, 30, 10, 10)
+        dialog_scroll.setWidgetResizable(True)
+        
+        # ---- for loop to add all gesture from gesture list json ----
+        
+        # ---- put below code in the for loop ----
+        gesture_bar = QWidget()
+        gesture_bar.setFixedHeight(60)
+        gesture_bar.setStyleSheet ("""
+        border: none; background: transparent;                         
+                                 """)
+        dialog_scroll_layout.addWidget(gesture_bar)
+        
+        gesture_frame = QFrame(gesture_bar)
+        gesture_frame.setGeometry(0,0,290,50)
+        gesture_frame.setStyleSheet ("""
+        border: none; background: #252438; border-radius: 10px                         
+                                 """)
+        
+        gesture_text = QLabel(gesture_frame)
+        gesture_text.setGeometry(10,10,270, 30)
+        gesture_text.setText("TEST") # ---- set text to the ones in the json file
+        gesture_text.setStyleSheet ("""
+        border: none; background: transparent;                         
+                                 """)
+        gesture_text.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+        
+        trash_button = QPushButton(gesture_bar)
+        trash_button.setGeometry(310,5,40,40)
+        trash_button.setIcon(QIcon(trash_path))
+        trash_button.setIconSize(QSize(40,40))
+        trash_button.setFlat(True)
+        # ---- need to connect to a delete function for gesture list ----
+        
+        dialog.exec()
 
     def new_gesture_button_function(self):
         # Clear existing rows so you don’t duplicate every time you click "+"
