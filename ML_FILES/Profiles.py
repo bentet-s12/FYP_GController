@@ -35,7 +35,7 @@ class Profile:
         profile = Profile(data["Profile_ID"], base_dir=bd)
 
         for action_dict in data.get("Actions", []):
-            profile.addAction(Actions.fromDict(action_dict), autosave=False)
+            profile.addAction(Actions.fromDict(action_dict), autosave=False, initialize =True)
 
         return profile
 
@@ -67,18 +67,26 @@ class Profile:
     def getActionList(self):
         return self._ActionList
 
-    def addAction(self, action, autosave=True):
+    def addAction(self, action, autosave=True ,initialize = False):
         # prevent duplicate gesture bindings
-        for existing in self._ActionList:
-            if existing.getGName() == action.getGName():
-                print("[Error] Gesture is already bound to an action.")
-                return False
+        if(initialize == False):
+            for existing in self._ActionList:
+                if existing.getGName() == action.getGName():
+                    print("[Error] Gesture is already bound to an action.")
+                    return False
 
-        
-        self._ActionList.append(action)
-            if autosave:
-                self.writeFile()  # uses base_dir default file
-            
+            # enforce gesture existence
+            if action.getGName() in self.Glist.getList():
+                self._ActionList.append(action)
+                if autosave:
+                    self.writeFile()  # uses base_dir default file
+                return True
+            else:
+                print("[Error] Gesture does not exist.")
+                return False
+        else:
+            self._ActionList.append(action)
+            return True
 
     def getAction(self, actionName):
         for action in self._ActionList:
