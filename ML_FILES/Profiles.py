@@ -74,15 +74,11 @@ class Profile:
                 print("[Error] Gesture is already bound to an action.")
                 return False
 
-        # enforce gesture existence
-        if action.getGName() in self.Glist.getList():
-            self._ActionList.append(action)
+        
+        self._ActionList.append(action)
             if autosave:
                 self.writeFile()  # uses base_dir default file
-            return True
-        else:
-            print("[Error] Gesture does not exist.")
-            return False
+            
 
     def getAction(self, actionName):
         for action in self._ActionList:
