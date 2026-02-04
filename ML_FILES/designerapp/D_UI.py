@@ -158,7 +158,6 @@ class MainWindow(QWidget):
             tab = self.tabs.widget(index)
             scroll = tab.findChild(QScrollArea)
             if scroll.property("individual_sub_bar_container") is True:
-                print("Scroll")
                 current_scroll_content = scroll.widget()
                 current_scroll_layout = current_scroll_content.layout()
                 current_profile = profiles.loadProfile(name)
