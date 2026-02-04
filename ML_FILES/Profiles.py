@@ -76,8 +76,8 @@ class Profile:
 
         
         self._ActionList.append(action)
-            if autosave:
-                self.writeFile()  # uses base_dir default file
+        if autosave:
+            self.writeFile()  # uses base_dir default file
             
 
     def getAction(self, actionName):
