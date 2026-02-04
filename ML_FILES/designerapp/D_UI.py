@@ -3,11 +3,12 @@ import keyboard
 import subprocess
 import sys
 import os
+import json
 import threading
 import socket
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, Qt, QIODevice
-from PySide6.QtGui import QPixmap, QIcon, QFont
+from PySide6.QtCore import QFile, Qt, QIODevice, QTimer
+from PySide6.QtGui import QPixmap, QIcon, QFont, QKeySequence
 from PySide6.QtCore import QSize
 from PySide6.QtWidgets import ( 
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
@@ -144,9 +145,15 @@ class MainWindow(QWidget):
     # main command sender
     def send_cmd(self, cmd: str):
         try:
-            with socket.create_connection(("127.0.0.1", 50555), timeout=0.3) as s:
-                s.sendall((cmd + "\n").encode("utf-8"))
-                return s.recv(1024).decode("utf-8", errors="ignore").strip()
+            with socket.create_connection((BACKEND_HOST, BACKEND_PORT), timeout=1.0) as s:
+                s.settimeout(1.0)
+                s.sendall((cmd.strip() + "\n").encode("utf-8"))
+
+                data = s.recv(1024)
+                if not data:
+                    return "ERR: no response"
+                return data.decode("utf-8", errors="ignore").strip()
+
         except Exception as e:
             return f"ERR: {e}"
         
@@ -276,87 +283,210 @@ class MainWindow(QWidget):
                 w.deleteLater()
                 
     def on_library_clicked(self):
-        
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        rec_path = os.path.join(BASE_DIR, "resource", "Webcam-Video-Circle--Streamline-Core.png")
+        rec_path   = os.path.join(BASE_DIR, "resource", "Webcam-Video-Circle--Streamline-Core.png")
         trash_path = os.path.join(BASE_DIR, "resource", "Recycle-Bin-2--Streamline-Core.png")
-        
+
+        # ---- locate GestureList.json ----
+        # If designerapp is under ML_FILES/designerapp, and GestureList.json is under ML_FILES/
+        ML_FILES_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # go up from designerapp
+        gesturelist_path = os.path.join(ML_FILES_DIR, "GestureList.json")
+
+        print("[UI] GestureList path =", gesturelist_path)
+        print("[UI] Exists? =", os.path.exists(gesturelist_path))
+
+        def load_gestures():
+            if not os.path.exists(gesturelist_path):
+                return []
+            try:
+                with open(gesturelist_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    # keep only non-empty strings
+                    out = []
+                    seen = set()
+                    for g in data:
+                        if isinstance(g, str):
+                            g2 = g.strip()
+                            if g2 and g2 not in seen:
+                                out.append(g2)
+                                seen.add(g2)
+                    return out
+            except Exception as e:
+                print("[UI] Failed to load GestureList.json:", e)
+            return []
+
+        def save_gestures(lst):
+            try:
+                with open(gesturelist_path, "w", encoding="utf-8") as f:
+                    json.dump(lst, f, indent=4)
+                return True
+            except Exception as e:
+                print("[UI] Failed to save GestureList.json:", e)
+                return False
+
+        gestures = load_gestures()
+
         dialog = QDialog(self)
         dialog.setWindowTitle("Gesture Library")
-        dialog.setFixedSize(400,500)
+        dialog.setFixedSize(400, 500)
         dialog.setModal(True)
-        
+
         top_frame = QFrame(dialog)
-        top_frame.setGeometry(0,0,400,70)
-        top_frame.setStyleSheet ("""
-        background-color: #030013                         
-                                 """)
-        
-        label_title = QLabel(top_frame)
-        label_title.setGeometry(20,20,300,31)
-        label_title.setStyleSheet ("""
-        color: #e0dde5; background: transparent;                         
-                                 """)
-        label_title.setText("Gesture Library")
-        label_title.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        
-        Lfont = label_title.font()
-        Lfont.setPointSize(14)
-        label_title.setFont(Lfont)
-        
+        top_frame.setGeometry(0, 0, 400, 70)
+        top_frame.setStyleSheet("background-color: #030013;")
+
+        label_title = QLabel("Gesture Library", top_frame)
+        label_title.setGeometry(20, 20, 250, 31)
+        label_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = label_title.font()
+        f.setPointSize(14)
+        label_title.setFont(f)
+
+        # ---- Selected gesture state ----
+        selected = {"name": None}
+
+        def set_selected(name: str):
+            selected["name"] = name
+            # optional: update title or status
+            if name:
+                label_title.setText(f"Gesture Library  ({name})")
+            else:
+                label_title.setText("Gesture Library")
+
+        # ---- record button (uses selected gesture) ----
         rec_button = QPushButton(top_frame)
-        rec_button.setGeometry(340,10,50,50)
+        rec_button.clicked.connect(self.new_gesture_dialog)
+        rec_button.setGeometry(340, 10, 50, 50)
         rec_button.setIcon(QIcon(rec_path))
-        rec_button.setIconSize(QSize(45,45))
-        rec_button.setStyleSheet ("""
-        border: none; background: transparent;                         
-                                 """)
-        
+        rec_button.setIconSize(QSize(45, 45))
+        rec_button.setStyleSheet("border: none; background: transparent;")
+
         dialog_scroll = QScrollArea(dialog)
-        dialog_scroll.setGeometry(0,70,400,430)
-        dialog_scroll.setStyleSheet ("""
-        background: #3c384d; border: none;                          
-                                 """)
+        dialog_scroll.setGeometry(0, 70, 400, 430)
+        dialog_scroll.setStyleSheet("background: #3c384d; border: none;")
         dialog_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
         dialog_scroll_content = QWidget()
         dialog_scroll.setWidget(dialog_scroll_content)
         dialog_scroll_layout = QVBoxLayout(dialog_scroll_content)
         dialog_scroll_layout.setAlignment(Qt.AlignTop)
         dialog_scroll_layout.setContentsMargins(10, 30, 10, 10)
         dialog_scroll.setWidgetResizable(True)
+
         
-        # ---- for loop to add all gesture from gesture list json ----
-        
-        # ---- put below code in the for loop ----
-        gesture_bar = QWidget()
-        gesture_bar.setFixedHeight(60)
-        gesture_bar.setStyleSheet ("""
-        border: none; background: transparent;                         
-                                 """)
-        dialog_scroll_layout.addWidget(gesture_bar)
-        
-        gesture_frame = QFrame(gesture_bar)
-        gesture_frame.setGeometry(0,0,290,50)
-        gesture_frame.setStyleSheet ("""
-        border: none; background: #252438; border-radius: 10px                         
-                                 """)
-        
-        gesture_text = QLabel(gesture_frame)
-        gesture_text.setGeometry(10,10,270, 30)
-        gesture_text.setText("TEST") # ---- set text to the ones in the json file
-        gesture_text.setStyleSheet ("""
-        border: none; background: transparent;                         
-                                 """)
-        gesture_text.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-        
-        trash_button = QPushButton(gesture_bar)
-        trash_button.setGeometry(310,5,40,40)
-        trash_button.setIcon(QIcon(trash_path))
-        trash_button.setIconSize(QSize(40,40))
-        trash_button.setFlat(True)
-        # ---- need to connect to a delete function for gesture list ----
-        
+        def rebuild_rows():
+            # clear
+            while dialog_scroll_layout.count():
+                item = dialog_scroll_layout.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    w.deleteLater()
+
+            gs = load_gestures()
+
+            if not gs:
+                empty = QLabel("No gestures found in GestureList.json")
+                empty.setStyleSheet("color: #e0dde5; background: transparent;")
+                empty.setAlignment(Qt.AlignCenter)
+                dialog_scroll_layout.addWidget(empty)
+                set_selected(None)
+                return
+
+            for gname in gs:
+                # row container
+                gesture_bar = QWidget()
+                gesture_bar.setFixedHeight(60)
+                gesture_bar.setStyleSheet("border: none; background: transparent;")
+                dialog_scroll_layout.addWidget(gesture_bar)
+
+                # clickable frame (select)
+                gesture_frame = QFrame(gesture_bar)
+                gesture_frame.setGeometry(0, 0, 290, 50)
+                gesture_frame.setStyleSheet("border: none; background: #252438; border-radius: 10px;")
+
+                gesture_text = QLabel(gname, gesture_frame)
+                gesture_text.setGeometry(10, 10, 270, 30)
+                gesture_text.setStyleSheet("border: none; background: transparent; color: #e0dde5;")
+                gesture_text.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+
+                # Make the row selectable by click
+                def make_click_handler(name):
+                    def _():
+                        set_selected(name)
+                    return _
+
+                select_btn = QPushButton(gesture_bar)
+                select_btn.setGeometry(0, 0, 290, 50)
+                select_btn.setStyleSheet("background: transparent; border: none;")
+                select_btn.clicked.connect(make_click_handler(gname))
+
+                # trash button (optional delete)
+                trash_button = QPushButton(gesture_bar)
+                trash_button.setGeometry(310, 5, 40, 40)
+                trash_button.setIcon(QIcon(trash_path))
+                trash_button.setIconSize(QSize(40, 40))
+                trash_button.setFlat(True)
+
+                def make_delete_handler(name):
+                    def _():
+                        reply = QMessageBox.question(
+                            dialog,
+                            "Delete gesture",
+                            f"Delete '{name}' from GestureList.json?",
+                            QMessageBox.Yes | QMessageBox.No
+                        )
+                        if reply != QMessageBox.Yes:
+                            return
+                        cur = load_gestures()
+                        cur2 = [x for x in cur if x != name]
+                        if save_gestures(cur2):
+                            # if deleting selected
+                            if selected["name"] == name:
+                                set_selected(None)
+                            rebuild_rows()
+                    return _
+
+                trash_button.clicked.connect(make_delete_handler(gname))
+
+        rebuild_rows()
+        # ---------------- AUTO REFRESH (file watcher via polling) ----------------
+        dialog._is_rebuilding = False
+
+        # initialize last_mtime to the current file mtime
+        try:
+            dialog._last_mtime = os.path.getmtime(gesturelist_path) if os.path.exists(gesturelist_path) else None
+        except Exception:
+            dialog._last_mtime = None
+
+        def _tick_refresh():
+            if dialog._is_rebuilding:
+                return
+            try:
+                mtime = os.path.getmtime(gesturelist_path) if os.path.exists(gesturelist_path) else None
+                if mtime != dialog._last_mtime:
+                    dialog._last_mtime = mtime
+                    dialog._is_rebuilding = True
+                    rebuild_rows()
+                    dialog._is_rebuilding = False
+            except Exception:
+                dialog._is_rebuilding = False
+
+        timer = QTimer(dialog)
+        timer.timeout.connect(_tick_refresh)
+        timer.start(500)
         dialog.exec()
+
+        
+    def _start_record_from_library(self, library_dialog: QDialog):
+        # optional: close library so user focuses on the create/record flow
+        try:
+            library_dialog.accept()
+        except Exception:
+            pass
+
+        # start your existing gesture input flow
+        self.new_gesture_dialog()
 
     def new_gesture_button_function(self):
         button = self.sender()
@@ -524,45 +654,32 @@ class MainWindow(QWidget):
                 }
             """)
     
-    #the new gesture button will be connected to this function now, for the user to key in the information for new gesture
-    #the ok button in the dialog wll trigger the function to add new gesture        
     def new_gesture_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Add New Gesture")
-        dialog.setFixedSize(800, 300)
+        dialog.setFixedSize(800, 220)
         dialog.setModal(True)
 
         layout = QVBoxLayout(dialog)
 
-        gesture_name = QTextEdit("Name of Gesture")
-        gesture_name.setAlignment(Qt.AlignCenter)
-        gesture_name.setReadOnly(True)
-        gFont = gesture_name.font()
-        gFont.setPointSize(12)
-        gesture_name.setFont(gFont)
-        layout.addWidget(gesture_name)
+        title = QTextEdit("Gesture Name")
+        title.setAlignment(Qt.AlignCenter)
+        title.setReadOnly(True)
+        font = title.font()
+        font.setPointSize(12)
+        title.setFont(font)
+        layout.addWidget(title)
 
         gesture_name_box = QTextEdit("")
         gesture_name_box.setAlignment(Qt.AlignCenter)
-        gFont2 = gesture_name_box.font()
-        gFont2.setPointSize(12)
-        gesture_name_box.setFont(gFont2)
+        font2 = gesture_name_box.font()
+        font2.setPointSize(12)
+        gesture_name_box.setFont(font2)
         gesture_name_box.setStyleSheet("""
             background-color: rgb(224, 221, 229);
             color: rgb(0, 0, 0);
         """)
         layout.addWidget(gesture_name_box)
-
-        key_input = QTextEdit("Input Key")
-        key_input.setAlignment(Qt.AlignCenter)
-        key_input.setReadOnly(True)
-        kfont = key_input.font()
-        kfont.setPointSize(12)
-        key_input.setFont(kfont)
-        layout.addWidget(key_input)
-
-        key_input_box = KeyCaptureBox()
-        layout.addWidget(key_input_box)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         layout.addWidget(buttons)
@@ -576,10 +693,8 @@ class MainWindow(QWidget):
             resp = self.send_cmd(f"CREATE_GESTURE {gname}")
             if resp.startswith("OK"):
                 dialog.accept()
-                self.new_gesture_button_function()  # refresh UI rows
             else:
                 QMessageBox.critical(self, "Create Gesture Failed", resp)
-
 
         buttons.accepted.connect(on_ok)
         buttons.rejected.connect(dialog.reject)
@@ -646,7 +761,7 @@ class KeyCaptureBox(QTextEdit):
     def __init__(self):
         super().__init__()
         self.setAlignment(Qt.AlignCenter)
-        self.setReadOnly(True)  # User cannot type freely
+        self.setReadOnly(True)
         self.setStyleSheet("""
             background-color: rgb(224, 221, 229);
             color: rgb(0, 0, 0);
@@ -654,23 +769,44 @@ class KeyCaptureBox(QTextEdit):
         font = self.font()
         font.setPointSize(12)
         self.setFont(font)
-        self.capturing = False  # Only capture key after clicked
+        self.capturing = False
 
     def mousePressEvent(self, event):
-        # When clicked, start capturing next key
         self.setText("Press a key...")
         self.capturing = True
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event):
         if self.capturing:
-            key_name = keyboard.read_key()  # Fallback for non-character keys
-            self.setText(f"{key_name}")
-            self.capturing = False  # Stop capturing after one key
-        else:
-            super().keyPressEvent(event)
+            key = event.key()
+            text = event.text()
 
-        
+            # Handle special keys nicely
+            if key == Qt.Key_Space:
+                key_name = "space"
+            elif key == Qt.Key_Return or key == Qt.Key_Enter:
+                key_name = "enter"
+            elif key == Qt.Key_Shift:
+                key_name = "shift"
+            elif key == Qt.Key_Control:
+                key_name = "ctrl"
+            elif key == Qt.Key_Alt:
+                key_name = "alt"
+            elif key == Qt.Key_Backspace:
+                key_name = "backspace"
+            elif key == Qt.Key_Tab:
+                key_name = "tab"
+            elif key == Qt.Key_Escape:
+                key_name = "esc"
+            else:
+                # letters/numbers/symbols
+                key_name = text.lower().strip() if text else f"key_{key}"
+
+            self.setText(key_name)
+            self.capturing = False
+            return
+
+        super().keyPressEvent(event)
 
 def run():
     app = QApplication([])

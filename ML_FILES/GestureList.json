@@ -3,7 +3,5 @@
     "reverse",
     "turn_left",
     "turn_right",
-    "neutral",
-    "JumpGesture",
-    "MoveGesture"
+    "neutral"
 ]
