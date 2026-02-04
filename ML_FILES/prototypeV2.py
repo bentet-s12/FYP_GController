@@ -397,7 +397,7 @@ def load_actions_from_profile_json(profile_path: str):
             if not isinstance(a, dict):
                 continue
 
-            gesture = a.get("gesture") or a.get("name")  # legacy fallback
+            gesture = a.get("G_name")  # legacy fallback
             if not isinstance(gesture, str):
                 continue
             gesture = gesture.strip()
@@ -471,7 +471,7 @@ class ClickTesterGUI:
         self.main.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.click_count = 0
-        self.label_mode = tk.Label(self.main, text="Hand Mode: right | Mouse Mode: CAMERA", font=("Arial", 12))
+        self.label_mode = tk.Label(self.main, text="Hand Mode: MultiKB | Mouse Mode: CAMERA", font=("Arial", 12))
         self.label_mode.pack(pady=8)
 
         self.label_gesture = tk.Label(self.main, text="Gesture: none", font=("Arial", 14))
@@ -824,11 +824,11 @@ class GestureControllerApp:
         self._req_toggle_camera = False
         self._cam_window_sized = False
 
-        self.hand_mode = "right"
+        self.hand_mode = "multi_keyboard"
         self.mouse_mode = "DISABLED"
         self.show_hand_vectors = True
 
-        self.hand_mode_cycle = ["right", "left", "auto", "multi_keyboard"]
+        self.hand_mode_cycle = ["multi_keyboard","right", "left","auto"]
         self._hand_mode_idx = self.hand_mode_cycle.index(self.hand_mode)
 
         self.swap_handedness = False

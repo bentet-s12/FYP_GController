@@ -168,150 +168,24 @@ class MainWindow(QWidget):
                 current_action_list = current_profile.getActionList() or []
                 
                 for act in current_action_list:
-            # act is an Actions object
-                    g_name = act.getGName()       # gesture name
-                    key    = act.getKeyPressed()
-                    itype  = act.getInputType()   # "Click" / "Hold" / "D_Click" etc.
-                    a_name = act.getName()        # action name (if you want to show it)
-
-                    sub_bar_widget = QWidget()
-                    sub_bar_widget.setFixedHeight(150)
-                    current_scroll_layout.addWidget(sub_bar_widget)
-
-                    sub_bar_frame = QFrame(sub_bar_widget)
-                    sub_bar_frame.setGeometry(0, 0, 1400, 125)
-                    sub_bar_frame.setProperty("individual_sub_bar", True)
-                    sub_bar_frame.setStyleSheet("""
-                        QFrame[individual_sub_bar] {
-                            background-color: #252438;
-                            border-radius: 12px;
-                        }
-                    """)
-
-                    # ---- Gesture Name (use real gesture) ----
-                    gesture_name = QTextEdit(g_name, sub_bar_frame)
-                    gesture_name.setGeometry(100, 45, 180, 60)
-                    gesture_name.setAlignment(Qt.AlignCenter)
-                    gFont = gesture_name.font()
-                    gFont.setPointSize(14)
-                    gesture_name.setFont(gFont)
-                    gesture_name.setReadOnly(True)
-                    gesture_name.setStyleSheet("""
-                        border: none;
-                        background: transparent;
-                        color: rgb(224, 221, 229);
-                    """)
-
-                    # ---- Key Input label ----
-                    key_input = QTextEdit("KEY INPUT", sub_bar_frame)
-                    key_input.setGeometry(350, 25, 120, 30)
-                    key_input.setAlignment(Qt.AlignCenter)
-                    kFont = key_input.font()
-                    kFont.setPointSize(9)
-                    key_input.setFont(kFont)
-                    key_input.setReadOnly(True)
-                    key_input.setStyleSheet("""
-                        border: none;
-                        color: rgb(224, 221, 229);
-                        background: transparent;
-                    """)
-
-                    # ---- Key Input box (show actual key) ----
-                    key_input_box = QTextEdit(str(key), sub_bar_frame)
-                    key_input_box.setGeometry(325, 55, 150, 40)
-                    key_input_box.setAlignment(Qt.AlignCenter)
-                    key_input_box.setReadOnly(True)  # set False if you want edit
-                    key_input_box.setStyleSheet("""
-                        background-color: rgb(224, 221, 229);
-                        color: rgb(0, 0, 0);
-                    """)
-
-                    # ---- Input Type label ----
-                    input_type = QTextEdit("INPUT TYPE", sub_bar_frame)
-                    input_type.setGeometry(650, 25, 120, 30)
-                    input_type.setAlignment(Qt.AlignCenter)
-                    iFont = input_type.font()
-                    iFont.setPointSize(9)
-                    input_type.setFont(iFont)
-                    input_type.setReadOnly(True)
-                    input_type.setStyleSheet("""
-                        border: none;
-                        color: rgb(224, 221, 229);
-                        background: transparent;
-                    """)
-
-                    # ---- Input Type combo ----
-                    input_type_box = QComboBox(sub_bar_frame)
-                    input_type_box.setGeometry(625, 55, 150, 40)
-                    iFont2 = input_type_box.font()
-                    iFont2.setPointSize(9)
-                    input_type_box.setFont(iFont2)
-                    input_type_box.setStyleSheet("""
-                        background-color: rgb(224, 221, 229);
-                        color: rgb(0, 0, 0);
-                    """)
-                    input_type_box.addItems(["Click", "Hold", "Double Click"])
-                    for i in range(input_type_box.count()):
-                        input_type_box.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
-
-                    # map profile value to combo display
-                    # your backend uses "D_Click" sometimes
-                    itype_norm = (itype or "").strip()
-                    if itype_norm == "D_Click":
-                        itype_norm = "Double Click"
-                    # set current selection if match
-                    idx = input_type_box.findText(itype_norm)
-                    if idx >= 0:
-                        input_type_box.setCurrentIndex(idx)
-
-                    # ---- Divider line ----
-                    line = QFrame(sub_bar_frame)
-                    line.setFrameShape(QFrame.VLine)
-                    line.setFrameShadow(QFrame.Sunken)
-                    line.setLineWidth(1)
-                    line.setGeometry(937, 20, 3, 80)
-                    line.setStyleSheet("background-color: rgb(224, 221, 229);")
-
-                    # ---- Action label (DON'T overwrite act variable) ----
-                    action_label = QTextEdit("ACTION", sub_bar_frame)
-                    action_label.setGeometry(1125, 25, 150, 30)
-                    action_label.setAlignment(Qt.AlignCenter)
-                    aFont = action_label.font()
-                    aFont.setPointSize(9)
-                    action_label.setFont(aFont)
-                    action_label.setReadOnly(True)
-                    action_label.setStyleSheet("""
-                        border: none;
-                        color: rgb(224, 221, 229);
-                        background: transparent;
-                    """)
-
-                    # ---- Action box (if you want to show action name) ----
-                    action_box = QComboBox(sub_bar_frame)
-                    action_box.setGeometry(1100, 55, 200, 40)
-                    action_box.setStyleSheet("""
-                        background-color: rgb(224, 221, 229);
-                        color: rgb(0, 0, 0);
-                    """)
-                    # If you have a list of possible actions, add them here.
-                    # For now just show current action name:
-                    action_box.addItem(a_name)
-
-                    # ---- Trash button ----
-                    trash_button = QPushButton(sub_bar_widget)
-                    trash_button.setGeometry(1450, 20, 80, 80)
-                    trash_button.setIcon(QIcon(trash_path))
-                    trash_button.setIconSize(QSize(50, 50))
-                    trash_button.setFlat(True)
-                    trash_button.setStyleSheet("""
-                        QPushButton:hover {
-                            background-color: rgba(255, 255, 255, 0.08);
-                            border-radius: 6px
-                        }
-                    """)
-                
+                    self.build_action_row(current_scroll_layout, profile_id=name, act=act)
                 
             index += 1
+
+        # --- GestureList.json watcher (same polling refresh logic as library dialog) ---
+        self._gesturelist_refreshing = False
+
+        try:
+            p = self._gesturelist_path()
+            self._gesturelist_last_mtime = os.path.getmtime(p) if os.path.exists(p) else None
+        except Exception:
+            self._gesturelist_last_mtime = None
+
+        self._gesturelist_timer = QTimer(self)
+        self._gesturelist_timer.timeout.connect(self._tick_gesturelist_refresh)
+        self._gesturelist_timer.start(500)
+
+
 
 
     # main command sender
@@ -661,170 +535,19 @@ class MainWindow(QWidget):
         self.new_gesture_dialog()
 
     def new_gesture_button_function(self):
-        button = self.sender()
-        
-        # ---- this is to locate the correct scrollarea in each tab
-        current_container = button.parent()
-        current_tab = current_container.parent()
-        current_scroll = current_tab.findChild(QScrollArea)
-        current_scroll_content = current_scroll.widget()
-        current_scroll_layout = current_scroll_content.layout()
-        # Clear existing rows so you don’t duplicate every time you click "+"
-        self._clear_layout(current_scroll_layout)
+        # This plus button should ADD a new empty row at bottom
+        current_index = self.tabs.currentIndex()
+        profile_id = self.tabs.tabText(current_index).strip()
 
-        # Load profile actions
-        
-
-        profiles = ProfileManager()
-        current_profile = profiles.loadProfile("1")
-        if current_profile is None:
-            print("[UI] Profile 1 not found / failed to load.")
+        # safety: ignore "+" tab
+        if self.tabs.tabBar().tabData(current_index) == "add_tab_button":
             return
 
-        current_action_list = current_profile.getActionList() or []
+        if not profile_id:
+            return
 
-        for act in current_action_list:
-            # act is an Actions object
-            g_name = act.getGName()       # gesture name
-            key    = act.getKeyPressed()
-            itype  = act.getInputType()   # "Click" / "Hold" / "D_Click" etc.
-            a_name = act.getName()        # action name (if you want to show it)
+        self._append_empty_action_mapping(profile_id)
 
-            sub_bar_widget = QWidget()
-            sub_bar_widget.setFixedHeight(150)
-            current_scroll_layout.addWidget(sub_bar_widget)
-
-            sub_bar_frame = QFrame(sub_bar_widget)
-            sub_bar_frame.setGeometry(0, 0, 1400, 125)
-            sub_bar_frame.setProperty("individual_sub_bar", True)
-            sub_bar_frame.setStyleSheet("""
-                QFrame[individual_sub_bar] {
-                    background-color: #252438;
-                    border-radius: 12px;
-                }
-            """)
-
-            # ---- Gesture Name (use real gesture) ----
-            gesture_name = QTextEdit(g_name, sub_bar_frame)
-            gesture_name.setGeometry(100, 45, 180, 60)
-            gesture_name.setAlignment(Qt.AlignCenter)
-            gFont = gesture_name.font()
-            gFont.setPointSize(14)
-            gesture_name.setFont(gFont)
-            gesture_name.setReadOnly(True)
-            gesture_name.setStyleSheet("""
-                border: none;
-                background: transparent;
-                color: rgb(224, 221, 229);
-            """)
-
-            # ---- Key Input label ----
-            key_input = QTextEdit("KEY INPUT", sub_bar_frame)
-            key_input.setGeometry(350, 25, 120, 30)
-            key_input.setAlignment(Qt.AlignCenter)
-            kFont = key_input.font()
-            kFont.setPointSize(9)
-            key_input.setFont(kFont)
-            key_input.setReadOnly(True)
-            key_input.setStyleSheet("""
-                border: none;
-                color: rgb(224, 221, 229);
-                background: transparent;
-            """)
-
-            # ---- Key Input box (show actual key) ----
-            key_input_box = QTextEdit(str(key), sub_bar_frame)
-            key_input_box.setGeometry(325, 55, 150, 40)
-            key_input_box.setAlignment(Qt.AlignCenter)
-            key_input_box.setReadOnly(True)  # set False if you want edit
-            key_input_box.setStyleSheet("""
-                background-color: rgb(224, 221, 229);
-                color: rgb(0, 0, 0);
-            """)
-
-            # ---- Input Type label ----
-            input_type = QTextEdit("INPUT TYPE", sub_bar_frame)
-            input_type.setGeometry(650, 25, 120, 30)
-            input_type.setAlignment(Qt.AlignCenter)
-            iFont = input_type.font()
-            iFont.setPointSize(9)
-            input_type.setFont(iFont)
-            input_type.setReadOnly(True)
-            input_type.setStyleSheet("""
-                border: none;
-                color: rgb(224, 221, 229);
-                background: transparent;
-            """)
-
-            # ---- Input Type combo ----
-            input_type_box = QComboBox(sub_bar_frame)
-            input_type_box.setGeometry(625, 55, 150, 40)
-            iFont2 = input_type_box.font()
-            iFont2.setPointSize(9)
-            input_type_box.setFont(iFont2)
-            input_type_box.setStyleSheet("""
-                background-color: rgb(224, 221, 229);
-                color: rgb(0, 0, 0);
-            """)
-            input_type_box.addItems(["Click", "Hold", "Double Click"])
-            for i in range(input_type_box.count()):
-                input_type_box.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
-
-            # map profile value to combo display
-            # your backend uses "D_Click" sometimes
-            itype_norm = (itype or "").strip()
-            if itype_norm == "D_Click":
-                itype_norm = "Double Click"
-            # set current selection if match
-            idx = input_type_box.findText(itype_norm)
-            if idx >= 0:
-                input_type_box.setCurrentIndex(idx)
-
-            # ---- Divider line ----
-            line = QFrame(sub_bar_frame)
-            line.setFrameShape(QFrame.VLine)
-            line.setFrameShadow(QFrame.Sunken)
-            line.setLineWidth(1)
-            line.setGeometry(937, 20, 3, 80)
-            line.setStyleSheet("background-color: rgb(224, 221, 229);")
-
-            # ---- Action label (DON'T overwrite act variable) ----
-            action_label = QTextEdit("ACTION", sub_bar_frame)
-            action_label.setGeometry(1125, 25, 150, 30)
-            action_label.setAlignment(Qt.AlignCenter)
-            aFont = action_label.font()
-            aFont.setPointSize(9)
-            action_label.setFont(aFont)
-            action_label.setReadOnly(True)
-            action_label.setStyleSheet("""
-                border: none;
-                color: rgb(224, 221, 229);
-                background: transparent;
-            """)
-
-            # ---- Action box (if you want to show action name) ----
-            action_box = QComboBox(sub_bar_frame)
-            action_box.setGeometry(1100, 55, 200, 40)
-            action_box.setStyleSheet("""
-                background-color: rgb(224, 221, 229);
-                color: rgb(0, 0, 0);
-            """)
-            # If you have a list of possible actions, add them here.
-            # For now just show current action name:
-            action_box.addItem(a_name)
-
-            # ---- Trash button ----
-            trash_button = QPushButton(sub_bar_widget)
-            trash_button.setGeometry(1450, 20, 80, 80)
-            trash_button.setIcon(QIcon("FYP_GController-main/ML_FILES/designerapp/resource/Recycle-Bin-2--Streamline-Core.png"))
-            trash_button.setIconSize(QSize(50, 50))
-            trash_button.setFlat(True)
-            trash_button.setStyleSheet("""
-                QPushButton:hover {
-                    background-color: rgba(255, 255, 255, 0.08);
-                    border-radius: 6px
-                }
-            """)
     
     def new_gesture_dialog(self):
         dialog = QDialog(self)
@@ -857,6 +580,7 @@ class MainWindow(QWidget):
         layout.addWidget(buttons)
 
         def on_ok():
+            self._refresh_action_dropdowns_from_gesturelist()
             gname = gesture_name_box.toPlainText().strip()
             if not gname:
                 QMessageBox.warning(self, "Error", "Gesture name cannot be empty.")
@@ -875,7 +599,7 @@ class MainWindow(QWidget):
 
     
     #for deleting new gesture
-    def trash_button_function(self):
+    def trash_button_function():
         return None
     # for the main power button        
     def main_power_button(self):
@@ -921,12 +645,466 @@ class MainWindow(QWidget):
         
         super().resizeEvent(event)
 
+    def _profile_path(self, profile_id: str) -> str:
+        # your profiles live in ML_FILES (parent of designerapp)
+        return str(self.PARENT_DIR / f"profile_{profile_id}.json")
+
+    def _load_profile_json(self, profile_id: str) -> dict:
+        path = self._profile_path(profile_id)
+        if not os.path.exists(path):
+            return {"Profile_ID": profile_id, "Actions": []}
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def _save_profile_json(self, profile_id: str, data: dict) -> None:
+        path = self._profile_path(profile_id)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+
+    def _update_action_in_profile(self, profile_id: str, action_name: str, new_fields: dict):
+        data = self._load_profile_json(profile_id)
+        actions = data.get("Actions", [])
+        if not isinstance(actions, list):
+            actions = []
+            data["Actions"] = actions
+
+        found = False
+        for a in actions:
+            if isinstance(a, dict) and a.get("name") == action_name:
+                a.update(new_fields)
+                found = True
+                break
+
+        if not found:
+            # create new entry if missing
+            row = {"name": action_name, "G_name": None, "key_pressed": None, "input_type": None, "key_type": None}
+            row.update(new_fields)
+            actions.append(row)
+
+        data["Profile_ID"] = profile_id
+        self._save_profile_json(profile_id, data)
+
+    def save_action_edit(self, profile_id, action_name, new_gname, new_key, new_input_type, new_name=None):
+        # profile_<id>.json is beside ProfileManager.py, so use ProfileManager's base_dir for correct pathing
+        profiles = ProfileManager()
+        base_dir = os.path.dirname(os.path.abspath(__import__("ProfileManager").__file__))
+        profile_path = os.path.join(base_dir, f"profile_{profile_id}.json")
+
+        if not os.path.exists(profile_path):
+            print("[UI] save_action_edit: profile file missing:", profile_path)
+            return
+
+        try:
+            with open(profile_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            actions = data.get("Actions", [])
+            if not isinstance(actions, list):
+                print("[UI] save_action_edit: Actions is not a list")
+                return
+
+            # find by action 'name' (unique identifier)
+            for a in actions:
+                if not isinstance(a, dict):
+                    continue
+
+                if a.get("name") == action_name:
+                    # update G_name
+                    a["G_name"] = (new_gname or "").strip()
+
+                    # update key_pressed
+                    nk = (new_key or "").strip()
+                    a["key_pressed"] = nk if nk != "" else None
+
+                    # update input_type (convert "Double Click" back if you want)
+                    it = (new_input_type or "").strip()
+                    if it == "Double Click":
+                        it = "D_Click"
+                    a["input_type"] = it
+
+                    # rename only AFTER match
+                    if new_name is not None:
+                        nn = new_name.strip()
+                        if nn != "":
+                            a["name"] = nn
+
+                    break
+            else:
+                print(f"[UI] save_action_edit: action '{action_name}' not found in profile_{profile_id}.json")
+                return
+
+
+
+            with open(profile_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+
+            print(f"[UI] Saved edit -> profile_{profile_id}.json : {action_name}")
+
+        except Exception as e:
+            print("[UI] save_action_edit failed:", e)
+
+
+
     def on_camera_clicked(self):
         print(self.send_cmd("TOGGLE_CAMERA"))
 
     def on_setting_clicked(self):
         print(self.send_cmd("TOGGLE_GUI"))
-        
+
+    def _gesturelist_path(self) -> str:
+        # GestureList.json is in ML_FILES (parent of designerapp)
+        return os.path.join(str(self.PARENT_DIR), "GestureList.json")
+
+    def _load_gesture_list(self) -> list[str]:
+        path = self._gesturelist_path()
+        out = []
+        try:
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    out = [x.strip() for x in data if isinstance(x, str) and x.strip()]
+        except Exception as e:
+            print("[UI] Failed loading GestureList.json:", e)
+
+        # optional: dedupe while keeping order
+        seen = set()
+        deduped = []
+        for g in out:
+            if g not in seen:
+                deduped.append(g)
+                seen.add(g)
+        return deduped
+
+    def build_action_row(self, current_scroll_layout, profile_id: str, act):
+        """
+        Reusable UI row builder.
+        - 'name' (action name) is editable (gesture_edit)
+        - 'G_name' (gesture) is dropdown (action_box)
+        """
+        g_name = act.getGName()
+        key    = act.getKeyPressed()
+        itype  = act.getInputType()
+        a_name = act.getName()
+        action_id_ref = {"id": a_name}
+
+        sub_bar_widget = QWidget()
+        sub_bar_widget.setFixedHeight(150)
+        current_scroll_layout.addWidget(sub_bar_widget)
+
+        sub_bar_frame = QFrame(sub_bar_widget)
+        sub_bar_frame.setGeometry(0, 0, 1400, 125)
+        sub_bar_frame.setProperty("individual_sub_bar", True)
+        sub_bar_frame.setStyleSheet("""
+            QFrame[individual_sub_bar] {
+                background-color: #252438;
+                border-radius: 12px;
+            }
+        """)
+
+        # ----- Editable NAME field (this edits "name") -----
+        gesture_edit = QLineEdit(a_name, sub_bar_frame)
+        gesture_edit.setGeometry(100, 55, 180, 40)
+        gesture_edit.setAlignment(Qt.AlignCenter)
+        gFont = gesture_edit.font()
+        gFont.setPointSize(14)
+        gesture_edit.setFont(gFont)
+        gesture_edit.setStyleSheet("""
+            border: none;
+            background: transparent;
+            color: rgb(224, 221, 229);
+        """)
+
+        # ----- Key label -----
+        key_input = QTextEdit("KEY INPUT", sub_bar_frame)
+        key_input.setGeometry(350, 25, 120, 30)
+        key_input.setAlignment(Qt.AlignCenter)
+        kFont = key_input.font()
+        kFont.setPointSize(9)
+        key_input.setFont(kFont)
+        key_input.setReadOnly(True)
+        key_input.setStyleSheet("""
+            border: none;
+            color: rgb(224, 221, 229);
+            background: transparent;
+        """)
+
+        # ----- Editable KEY field (edits "key_pressed") -----
+        key_edit = QLineEdit("" if key is None else str(key), sub_bar_frame)
+        key_edit.setGeometry(325, 55, 150, 40)
+        key_edit.setAlignment(Qt.AlignCenter)
+        key_edit.setStyleSheet("""
+            background-color: rgb(224, 221, 229);
+            color: rgb(0, 0, 0);
+        """)
+
+        # ----- Input type label -----
+        input_type = QTextEdit("INPUT TYPE", sub_bar_frame)
+        input_type.setGeometry(650, 25, 120, 30)
+        input_type.setAlignment(Qt.AlignCenter)
+        iFont = input_type.font()
+        iFont.setPointSize(9)
+        input_type.setFont(iFont)
+        input_type.setReadOnly(True)
+        input_type.setStyleSheet("""
+            border: none;
+            color: rgb(224, 221, 229);
+            background: transparent;
+        """)
+
+        # ----- Input type dropdown (edits "input_type") -----
+        input_type_box = QComboBox(sub_bar_frame)
+        input_type_box.setGeometry(625, 55, 150, 40)
+        iFont2 = input_type_box.font()
+        iFont2.setPointSize(9)
+        input_type_box.setFont(iFont2)
+        input_type_box.setStyleSheet("""
+            background-color: rgb(224, 221, 229);
+            color: rgb(0, 0, 0);
+        """)
+        input_type_box.addItems(["Click", "Hold", "Double Click"])
+        for i in range(input_type_box.count()):
+            input_type_box.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
+
+        # normalize "D_Click" -> "Double Click" for display
+        itype_norm = (itype or "").strip()
+        if itype_norm == "D_Click":
+            itype_norm = "Double Click"
+        idx = input_type_box.findText(itype_norm)
+        if idx >= 0:
+            input_type_box.setCurrentIndex(idx)
+
+        # ----- Divider line -----
+        line = QFrame(sub_bar_frame)
+        line.setFrameShape(QFrame.VLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setLineWidth(1)
+        line.setGeometry(937, 20, 3, 80)
+        line.setStyleSheet("background-color: rgb(224, 221, 229);")
+
+        # ----- ACTION label (your UI label) -----
+        action_label = QTextEdit("ACTION", sub_bar_frame)
+        action_label.setGeometry(1125, 25, 150, 30)
+        action_label.setAlignment(Qt.AlignCenter)
+        aFont = action_label.font()
+        aFont.setPointSize(9)
+        action_label.setFont(aFont)
+        action_label.setReadOnly(True)
+        action_label.setStyleSheet("""
+            border: none;
+            color: rgb(224, 221, 229);
+            background: transparent;
+        """)
+
+        # ----- Dropdown for G_name (gesture binding) -----
+        action_box = QComboBox(sub_bar_frame)
+        action_box.setGeometry(1100, 55, 200, 40)
+        action_box.setStyleSheet("""
+            background-color: rgb(224, 221, 229);
+            color: rgb(0, 0, 0);
+        """)
+        action_box.setProperty("is_action_box", True)
+        gesture_list = self._load_gesture_list()
+        action_box.clear()
+        action_box.addItems(gesture_list)
+
+        # select current g_name (G_name)
+        idx2 = action_box.findText(g_name)
+        if idx2 >= 0:
+            action_box.setCurrentIndex(idx2)
+        elif g_name:
+            # if current g_name not in GestureList, still show it
+            action_box.insertItem(0, g_name)
+            action_box.setCurrentIndex(0)
+
+        # ----- Trash button -----
+        trash_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resource", "Recycle-Bin-2--Streamline-Core.png")
+        trash_button = QPushButton(sub_bar_widget)
+        trash_button.setGeometry(1450, 20, 80, 80)
+        trash_button.setIcon(QIcon(trash_path))
+        trash_button.setIconSize(QSize(50, 50))
+        trash_button.setFlat(True)
+        trash_button.setStyleSheet("""
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.08);
+                border-radius: 6px
+            }
+        """)
+        def on_trash_clicked():
+            # 1) delete from JSON
+            try:
+                data = self._load_profile_json(profile_id)
+                actions = data.get("Actions", [])
+                if not isinstance(actions, list):
+                    actions = []
+
+                target = action_id_ref["id"]
+                new_actions = []
+                for a in actions:
+                    if isinstance(a, dict) and a.get("name") == target:
+                        continue
+                    new_actions.append(a)
+
+                data["Actions"] = new_actions
+                self._save_profile_json(profile_id, data)
+                print(f"[UI] Deleted action row '{target}' from profile_{profile_id}.json")
+            except Exception as e:
+                print("[UI] Failed to delete row:", e)
+                return
+
+            # 2) remove from UI
+            sub_bar_widget.setParent(None)
+            sub_bar_widget.deleteLater()
+
+        trash_button.clicked.connect(on_trash_clicked)
+
+
+        # ----- ONE commit_change (wired AFTER action_box exists) -----
+        def commit_change():
+            old_id = action_id_ref["id"]
+            new_id = gesture_edit.text().strip()
+
+            self.save_action_edit(
+                profile_id=profile_id,
+                action_name=old_id,                          # stable lookup (current id)
+                new_gname=action_box.currentText().strip(),   # writes to G_name
+                new_key=key_edit.text().strip(),
+                new_input_type=input_type_box.currentText(),
+                new_name=new_id                               # writes to name
+            )
+
+            # if rename succeeded logically, update our local id so future edits & delete work
+            if new_id and new_id != old_id:
+                action_id_ref["id"] = new_id
+
+
+        gesture_edit.editingFinished.connect(commit_change)
+        key_edit.editingFinished.connect(commit_change)
+        input_type_box.currentTextChanged.connect(lambda _: commit_change())
+        action_box.currentTextChanged.connect(lambda _: commit_change())
+
+    def _append_empty_action_mapping(self, profile_id: str):
+        """
+        Add a new empty mapping row at the bottom of the current tab's scroll layout,
+        and also append an empty action entry into profile_<id>.json.
+
+        - name: auto-generated unique (e.g. "new_action_1")
+        - G_name/key_pressed/input_type/key_type: None
+        """
+        # ---- find the current tab scroll layout ----
+        current_index = self.tabs.currentIndex()
+        tab = self.tabs.widget(current_index)
+        if tab is None:
+            return
+
+        scroll = tab.findChild(QScrollArea)
+        if scroll is None:
+            return
+
+        content = scroll.widget()
+        layout = content.layout()
+        if layout is None:
+            return
+
+        # ---- load profile json ----
+        path = self._profile_path(profile_id)
+        data = self._load_profile_json(profile_id)
+        actions = data.get("Actions", [])
+        if not isinstance(actions, list):
+            actions = []
+            data["Actions"] = actions
+
+        # ---- generate a unique default action name ----
+        existing_names = set()
+        for a in actions:
+            if isinstance(a, dict):
+                n = a.get("name")
+                if isinstance(n, str):
+                    existing_names.add(n)
+
+        base = "new_action"
+        i = 1
+        new_name = f"{base}_{i}"
+        while new_name in existing_names:
+            i += 1
+            new_name = f"{base}_{i}"
+
+        # ---- append empty row to json ----
+        new_row = {
+            "name": new_name,
+            "G_name": None,
+            "key_pressed": None,
+            "input_type": None,
+            "key_type": None
+        }
+        actions.append(new_row)
+        data["Profile_ID"] = profile_id
+        self._save_profile_json(profile_id, data)
+
+        # ---- build UI row using an Actions-like object (minimal shim) ----
+        class _ActShim:
+            def __init__(self, d):
+                self._d = d
+            def getGName(self): return self._d.get("G_name")
+            def getKeyPressed(self): return self._d.get("key_pressed")
+            def getInputType(self): return self._d.get("input_type")
+            def getName(self): return self._d.get("name")
+
+        self.build_action_row(layout, profile_id=profile_id, act=_ActShim(new_row))
+
+    def _tick_gesturelist_refresh(self):
+        if getattr(self, "_gesturelist_refreshing", False):
+            return
+
+        try:
+            path = self._gesturelist_path()
+            mtime = os.path.getmtime(path) if os.path.exists(path) else None
+
+            if mtime != getattr(self, "_gesturelist_last_mtime", None):
+                self._gesturelist_last_mtime = mtime
+                self._gesturelist_refreshing = True
+                self._refresh_action_dropdowns_from_gesturelist()
+                self._gesturelist_refreshing = False
+
+        except Exception as e:
+            self._gesturelist_refreshing = False
+            print("[UI] GestureList watcher error:", e)
+
+
+    def _refresh_action_dropdowns_from_gesturelist(self):
+        gesture_list = self._load_gesture_list()  # you already wrote this helper
+
+        # Find every action dropdown you created and refresh it
+        for tab_index in range(self.tabs.count()):
+            if self.tabs.tabBar().tabData(tab_index) == "add_tab_button":
+                continue
+
+            tab = self.tabs.widget(tab_index)
+            if tab is None:
+                continue
+
+            for cb in tab.findChildren(QComboBox):
+                if cb.property("is_action_box") is True:
+                    current = cb.currentText()
+
+                    # block signals so it doesn't commit_change while repopulating
+                    was_blocked = cb.blockSignals(True)
+
+                    cb.clear()
+                    cb.addItems(gesture_list)
+
+                    # restore selection
+                    idx = cb.findText(current)
+                    if idx >= 0:
+                        cb.setCurrentIndex(idx)
+                    elif current:
+                        cb.insertItem(0, current)
+                        cb.setCurrentIndex(0)
+
+                    cb.blockSignals(was_blocked)
+
+
+
 
 # this class is only for implementing the text box that will capture the user keyboard input when adding new gesture        
 class KeyCaptureBox(QTextEdit):

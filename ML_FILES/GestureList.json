@@ -1,7 +1,7 @@
 [
-    "accelerate",
-    "reverse",
-    "turn_left",
-    "turn_right",
-    "neutral"
+    "up",
+    "down",
+    "left",
+    "right",
+    "null"
 ]
