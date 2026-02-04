@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox
 )
 from pathlib import Path
+from ProfileManager import ProfileManager
 
 BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 50555
@@ -146,6 +147,7 @@ class MainWindow(QWidget):
         
         json_files = self.PARENT_DIR.glob("profile_*.json")
         index = 1
+        profiles = ProfileManager()
         for files in json_files:
             name = files.stem.replace("profile_", "", 1)
             self.new_tab_button(index)
@@ -154,6 +156,159 @@ class MainWindow(QWidget):
             scroll = tab.findChild(QScrollArea)
             if scroll.property("individual_sub_bar_container") is True:
                 print("Scroll")
+                current_scroll_content = scroll.widget()
+                current_scroll_layout = current_scroll_content.layout()
+                current_profile = profiles.loadProfile(name)
+                if current_profile is None:
+                    print("[UI] Profile not found / failed to load.")
+                    return
+
+                current_action_list = current_profile.getActionList() or []
+                
+                for act in current_action_list:
+            # act is an Actions object
+                    g_name = act.getGName()       # gesture name
+                    key    = act.getKeyPressed()
+                    itype  = act.getInputType()   # "Click" / "Hold" / "D_Click" etc.
+                    a_name = act.getName()        # action name (if you want to show it)
+
+                    sub_bar_widget = QWidget()
+                    sub_bar_widget.setFixedHeight(150)
+                    current_scroll_layout.addWidget(sub_bar_widget)
+
+                    sub_bar_frame = QFrame(sub_bar_widget)
+                    sub_bar_frame.setGeometry(0, 0, 1400, 125)
+                    sub_bar_frame.setProperty("individual_sub_bar", True)
+                    sub_bar_frame.setStyleSheet("""
+                        QFrame[individual_sub_bar] {
+                            background-color: #252438;
+                            border-radius: 12px;
+                        }
+                    """)
+
+                    # ---- Gesture Name (use real gesture) ----
+                    gesture_name = QTextEdit(g_name, sub_bar_frame)
+                    gesture_name.setGeometry(100, 45, 180, 60)
+                    gesture_name.setAlignment(Qt.AlignCenter)
+                    gFont = gesture_name.font()
+                    gFont.setPointSize(14)
+                    gesture_name.setFont(gFont)
+                    gesture_name.setReadOnly(True)
+                    gesture_name.setStyleSheet("""
+                        border: none;
+                        background: transparent;
+                        color: rgb(224, 221, 229);
+                    """)
+
+                    # ---- Key Input label ----
+                    key_input = QTextEdit("KEY INPUT", sub_bar_frame)
+                    key_input.setGeometry(350, 25, 120, 30)
+                    key_input.setAlignment(Qt.AlignCenter)
+                    kFont = key_input.font()
+                    kFont.setPointSize(9)
+                    key_input.setFont(kFont)
+                    key_input.setReadOnly(True)
+                    key_input.setStyleSheet("""
+                        border: none;
+                        color: rgb(224, 221, 229);
+                        background: transparent;
+                    """)
+
+                    # ---- Key Input box (show actual key) ----
+                    key_input_box = QTextEdit(str(key), sub_bar_frame)
+                    key_input_box.setGeometry(325, 55, 150, 40)
+                    key_input_box.setAlignment(Qt.AlignCenter)
+                    key_input_box.setReadOnly(True)  # set False if you want edit
+                    key_input_box.setStyleSheet("""
+                        background-color: rgb(224, 221, 229);
+                        color: rgb(0, 0, 0);
+                    """)
+
+                    # ---- Input Type label ----
+                    input_type = QTextEdit("INPUT TYPE", sub_bar_frame)
+                    input_type.setGeometry(650, 25, 120, 30)
+                    input_type.setAlignment(Qt.AlignCenter)
+                    iFont = input_type.font()
+                    iFont.setPointSize(9)
+                    input_type.setFont(iFont)
+                    input_type.setReadOnly(True)
+                    input_type.setStyleSheet("""
+                        border: none;
+                        color: rgb(224, 221, 229);
+                        background: transparent;
+                    """)
+
+                    # ---- Input Type combo ----
+                    input_type_box = QComboBox(sub_bar_frame)
+                    input_type_box.setGeometry(625, 55, 150, 40)
+                    iFont2 = input_type_box.font()
+                    iFont2.setPointSize(9)
+                    input_type_box.setFont(iFont2)
+                    input_type_box.setStyleSheet("""
+                        background-color: rgb(224, 221, 229);
+                        color: rgb(0, 0, 0);
+                    """)
+                    input_type_box.addItems(["Click", "Hold", "Double Click"])
+                    for i in range(input_type_box.count()):
+                        input_type_box.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
+
+                    # map profile value to combo display
+                    # your backend uses "D_Click" sometimes
+                    itype_norm = (itype or "").strip()
+                    if itype_norm == "D_Click":
+                        itype_norm = "Double Click"
+                    # set current selection if match
+                    idx = input_type_box.findText(itype_norm)
+                    if idx >= 0:
+                        input_type_box.setCurrentIndex(idx)
+
+                    # ---- Divider line ----
+                    line = QFrame(sub_bar_frame)
+                    line.setFrameShape(QFrame.VLine)
+                    line.setFrameShadow(QFrame.Sunken)
+                    line.setLineWidth(1)
+                    line.setGeometry(937, 20, 3, 80)
+                    line.setStyleSheet("background-color: rgb(224, 221, 229);")
+
+                    # ---- Action label (DON'T overwrite act variable) ----
+                    action_label = QTextEdit("ACTION", sub_bar_frame)
+                    action_label.setGeometry(1125, 25, 150, 30)
+                    action_label.setAlignment(Qt.AlignCenter)
+                    aFont = action_label.font()
+                    aFont.setPointSize(9)
+                    action_label.setFont(aFont)
+                    action_label.setReadOnly(True)
+                    action_label.setStyleSheet("""
+                        border: none;
+                        color: rgb(224, 221, 229);
+                        background: transparent;
+                    """)
+
+                    # ---- Action box (if you want to show action name) ----
+                    action_box = QComboBox(sub_bar_frame)
+                    action_box.setGeometry(1100, 55, 200, 40)
+                    action_box.setStyleSheet("""
+                        background-color: rgb(224, 221, 229);
+                        color: rgb(0, 0, 0);
+                    """)
+                    # If you have a list of possible actions, add them here.
+                    # For now just show current action name:
+                    action_box.addItem(a_name)
+
+                    # ---- Trash button ----
+                    trash_button = QPushButton(sub_bar_widget)
+                    trash_button.setGeometry(1450, 20, 80, 80)
+                    trash_button.setIcon(QIcon("FYP_GController-main/ML_FILES/designerapp/resource/Recycle-Bin-2--Streamline-Core.png"))
+                    trash_button.setIconSize(QSize(50, 50))
+                    trash_button.setFlat(True)
+                    trash_button.setStyleSheet("""
+                        QPushButton:hover {
+                            background-color: rgba(255, 255, 255, 0.08);
+                            border-radius: 6px
+                        }
+                    """)
+                
+                
             index += 1
 
 
@@ -387,7 +542,7 @@ class MainWindow(QWidget):
         self._clear_layout(current_scroll_layout)
 
         # Load profile actions
-        from ProfileManager import ProfileManager
+        
 
         profiles = ProfileManager()
         current_profile = profiles.loadProfile("1")
