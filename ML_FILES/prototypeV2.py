@@ -4,6 +4,7 @@ import json
 import shutil
 import numpy as np
 import cv2
+import queue
 import tkinter as tk
 from sklearn.neighbors import KNeighborsClassifier
 import mediapipe as mp
@@ -577,10 +578,6 @@ class ClickTesterGUI:
         # Start hidden – only shown when toggled
         self.root.withdraw()
 
-
-
-
-
     def on_close(self):
         self.running = False
         self.app.running = False
@@ -589,8 +586,6 @@ class ClickTesterGUI:
             self.root.after(50, self.root.destroy)
         except Exception:
             self.root.destroy()
-
-
 
     def update_status(self, mode_text, gesture_text, mapped_text, fired_text):
         self.label_mode.config(text=mode_text)
@@ -695,7 +690,11 @@ class ClickTesterGUI:
         except Exception:
             pass
 
-
+    def destroy(self):
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
 
 
 
@@ -815,6 +814,9 @@ class GestureControllerApp:
         self.want_gui = False          # start hidden
         self._gui_applied = None       # tracks last applied state
         self._raised_once = False
+        self._gui_queue = queue.Queue()
+        self._gui_thread = None
+        self.gui = None  # created inside GUI thread
 
         self.want_camera_view = False
         self._camera_window_open = False
@@ -868,10 +870,8 @@ class GestureControllerApp:
         self.classifier = None
         self._mp_start_t = time.perf_counter()
 
-        self.gui = ClickTesterGUI(self) if self.enable_gui else None
-        if self.gui is not None:
-            self.gui.hide()
-            self._gui_target_visible = False
+        if self.enable_gui:
+            self._start_gui_thread()
 
         # --- collector mode (like custom_manager) ---
         self.collect_mode = "TWO_HAND"     # "TWO_HAND" or "ONE_HAND"
@@ -892,7 +892,8 @@ class GestureControllerApp:
         self._gui_toggle_pending = False
         self._gui_target_visible = False  # last requested state
 
-
+        self._last_tk_pump = 0.0
+        self._tk_pump_interval = 1.0 / 60.0   # 60 Hz (use 1/30 if you want)
 
         if self.enable_camera:
             self._init_camera_and_models()
@@ -1435,6 +1436,58 @@ class GestureControllerApp:
 
         print("[COLLECT] Exit to background")
 
+    def _start_gui_thread(self):
+        self._gui_thread = threading.Thread(target=self._gui_thread_main, daemon=True)
+        self._gui_thread.start()
+
+    def _gui_thread_main(self):
+        # Tk must be CREATED in the same thread that runs mainloop
+        try:
+            self.gui = ClickTesterGUI(self)
+            self.gui.hide()  # start hidden
+
+            def pump_queue():
+                # Process all pending GUI messages
+                try:
+                    while True:
+                        msg = self._gui_queue.get_nowait()
+                        if msg is None:
+                            # shutdown signal
+                            try:
+                                self.gui.destroy()
+                            except Exception:
+                                pass
+                            return
+
+                        kind = msg[0]
+
+                        if kind == "SHOW":
+                            self.gui.show()
+
+                        elif kind == "HIDE":
+                            self.gui.hide()
+
+                        elif kind == "STATUS":
+                            _, mode_text, gesture_text, mapped_text, fired_text = msg
+                            self.gui.update_status(mode_text, gesture_text, mapped_text, fired_text)
+
+                except queue.Empty:
+                    pass
+                except Exception as e:
+                    print("[GUI] pump_queue error:", e, flush=True)
+
+                # reschedule
+                try:
+                    self.gui.root.after(16, pump_queue)  # ~60fps GUI responsiveness
+                except Exception:
+                    pass
+
+            self.gui.root.after(16, pump_queue)
+            self.gui.root.mainloop()
+
+        except Exception as e:
+            print("[GUI] thread crashed:", e, flush=True)
+            self.gui = None
 
     # ---------- main loop ----------
 
@@ -1456,31 +1509,17 @@ class GestureControllerApp:
                 self.want_gui = not self.want_gui
                 print("[MAIN] want_gui =", self.want_gui, flush=True)
 
-
+                # send to GUI thread
+                if self.enable_gui:
+                    try:
+                        self._gui_queue.put(("SHOW",) if self.want_gui else ("HIDE",))
+                    except Exception:
+                        pass
 
             if self._collect_req_name is not None:
                 name = self._collect_req_name
                 self._collect_req_name = None
                 self._start_collect_mode(name)
-
-            # Apply GUI visibility state (camera-style)
-            if self.gui is not None:
-                try:
-                    if self._gui_applied is None or self._gui_applied != self.want_gui:
-                        if self.want_gui:
-                            self.gui.show()
-                        else:
-                            self.gui.hide()
-                        self._gui_applied = self.want_gui
-                except Exception as e:
-                    print("[GUI] apply failed:", e, flush=True)
-            # Pump Tk events (since you are NOT calling mainloop())
-            if self.gui is not None:
-                try:
-                    self.gui.root.update_idletasks()
-                    self.gui.root.update()
-                except Exception:
-                    pass
 
             ret, frame_raw = self.cap.read()
             if not ret:
@@ -1697,18 +1736,18 @@ class GestureControllerApp:
             mode_text = f"Hand Mode: {self.hand_mode} | Mouse Mode: {self.mouse_mode} | Monitor: {mon_txt}"
 
             # Thread-safe UI update
-            if self.gui is not None:
+            if self.enable_gui:
                 try:
-                    self.gui.root.after(
-                        0,
-                        self.gui.update_status,
+                    self._gui_queue.put((
+                        "STATUS",
                         mode_text,
                         gesture_text,
                         f"Mapped: {mapped_text}",
-                        f"Fired: {fired_text}"
-                    )
+                        f"Fired: {fired_text}",
+                    ))
                 except Exception:
                     pass
+
 
             if self.want_camera_view:
                 if not self._camera_window_open:
@@ -1827,6 +1866,13 @@ class GestureControllerApp:
                 self.hand_landmarker.close()
         except Exception:
             pass
+
+        if self.enable_gui:
+            try:
+                self._gui_queue.put(None)  # shutdown signal
+            except Exception:
+                pass
+
 
         self._camera_window_open = False
 
