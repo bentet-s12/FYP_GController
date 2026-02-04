@@ -145,10 +145,12 @@ class MainWindow(QWidget):
         
         self.BASE_DIR = Path(__file__).parent
         self.PARENT_DIR = self.BASE_DIR.parent
+        RESOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
         
         json_files = self.PARENT_DIR.glob("profile_*.json")
         index = 1
         profiles = ProfileManager()
+        trash_path = os.path.join(RESOURCE_DIR, "resource", "Recycle-Bin-2--Streamline-Core.png")
         for files in json_files:
             name = files.stem.replace("profile_", "", 1)
             self.new_tab_button(index)
@@ -156,7 +158,6 @@ class MainWindow(QWidget):
             tab = self.tabs.widget(index)
             scroll = tab.findChild(QScrollArea)
             if scroll.property("individual_sub_bar_container") is True:
-                print("Scroll")
                 current_scroll_content = scroll.widget()
                 current_scroll_layout = current_scroll_content.layout()
                 current_profile = profiles.loadProfile(name)
@@ -299,7 +300,7 @@ class MainWindow(QWidget):
                     # ---- Trash button ----
                     trash_button = QPushButton(sub_bar_widget)
                     trash_button.setGeometry(1450, 20, 80, 80)
-                    trash_button.setIcon(QIcon("FYP_GController-main/ML_FILES/designerapp/resource/Recycle-Bin-2--Streamline-Core.png"))
+                    trash_button.setIcon(QIcon(trash_path))
                     trash_button.setIconSize(QSize(50, 50))
                     trash_button.setFlat(True)
                     trash_button.setStyleSheet("""
