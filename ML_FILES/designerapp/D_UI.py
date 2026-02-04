@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QComboBox, QTabBar, QToolButton, QDialog, QScrollArea, 
     QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox
 )
+from pathlib import Path
 
 BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 50555
@@ -139,6 +140,21 @@ class MainWindow(QWidget):
             project_root=project_root,
             port=50555
         )
+        
+        self.BASE_DIR = Path(__file__).parent
+        self.PARENT_DIR = self.BASE_DIR.parent
+        
+        json_files = self.PARENT_DIR.glob("profile_*.json")
+        index = 1
+        for files in json_files:
+            name = files.stem.replace("profile_", "", 1)
+            self.new_tab_button(index)
+            self.tabs.setTabText(index, name)
+            tab = self.tabs.widget(index)
+            scroll = tab.findChild(QScrollArea)
+            if scroll.property("individual_sub_bar_container") is True:
+                print("Scroll")
+            index += 1
 
 
     # main command sender
