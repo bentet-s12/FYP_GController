@@ -523,6 +523,8 @@ class MainWindow(QWidget):
                             # if deleting selected
                             if selected["name"] == name:
                                 set_selected(None)
+                                resp = self.send_cmd(f"DELETE_GESTURE {name}")
+                                print("[UI] DELETE_GESTURE resp:", resp)
                             rebuild_rows()
                     return _
 
