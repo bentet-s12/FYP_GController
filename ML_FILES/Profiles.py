@@ -54,8 +54,8 @@ class Profile:
             "Actions": [action.toDict() for action in self._ActionList]
             }
 
-            with open(filename, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
 
     def deleteSelf(self):
         filename = self._abs(f"profile_{self._Profile_ID}.json")
