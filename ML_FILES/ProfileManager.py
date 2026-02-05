@@ -22,7 +22,7 @@ class ProfileManager:
         with open(fullpath, "r", encoding="utf-8") as f:
             data = json.load(f)
         return ProfileManager(data["profileNames"], base_dir=base_dir)
-
+    
     def writeFile(self, filename):
         data = {"profileNames": self._profileNames}
         fullpath = self._path(filename)
@@ -85,11 +85,10 @@ class ProfileManager:
 
     def getProfileList(self):
         return self._profileNames
-
+    
     def loadProfile(self, profileName):
-        # Determine the filename based on the ID
         if profileName == "Default":
-            filename = "default.json" # Or "Default.json" - be consistent!
+            filename = "default.json"
         else:
             filename = f"profile_{profileName}.json"
         
