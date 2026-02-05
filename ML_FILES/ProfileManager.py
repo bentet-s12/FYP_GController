@@ -14,14 +14,61 @@ class ProfileManager:
         return os.path.join(self._base_dir, filename)
 
     @staticmethod
-    def readFile(filename):
-        # Interpret filename relative to ProfileManager.py location
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        fullpath = os.path.join(base_dir, filename)
+    def readFile(filename, base_dir=None):
+        # 1. Resolve Path
+        if not os.path.isabs(filename):
+            bd = base_dir or os.path.dirname(os.path.abspath(__file__))
+            filename = os.path.join(bd, filename)
 
-        with open(fullpath, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return ProfileManager(data["profileNames"], base_dir=base_dir)
+        data = None
+        needs_repair = False
+
+        # 2. Attempt to Read
+        if os.path.exists(filename):
+            try:
+                with open(filename, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if not content:
+                        print(f"[Repair] {filename} was empty. Resetting structure...")
+                        needs_repair = True
+                    else:
+                        data = json.loads(content)
+                        # Check for required keys
+                        if "Profile_ID" not in data or "Actions" not in data:
+                            print(f"[Repair] {filename} missing keys. Resetting...")
+                            needs_repair = True
+            except (json.JSONDecodeError, Exception) as e:
+                print(f"[Repair] {filename} corrupted ({e}). Resetting...")
+                needs_repair = True
+        else:
+            needs_repair = True
+
+        # 3. Perform Repair if necessary
+        if needs_repair:
+            # Determine ID from filename (e.g., "profile_1.json" -> "1" or "default.json" -> "Default")
+            basename = os.path.basename(filename).replace(".json", "")
+            repair_id = basename.replace("profile_", "")
+            if repair_id.lower() == "default": repair_id = "Default"
+
+            # Create blank structure
+            data = {
+                "Profile_ID": repair_id,
+                "Actions": []
+            }
+            
+            # Save the repaired file immediately
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
+            print(f"[OK] {filename} has been repaired with a valid structure.")
+
+        # 4. Return the Profile Object
+        bd = base_dir or os.path.dirname(os.path.abspath(filename))
+        profile = Profile(data["Profile_ID"], base_dir=bd)
+
+        for action_dict in data.get("Actions", []):
+            profile.addAction(Actions.fromDict(action_dict), autosave=False, initialize=True)
+
+        return profile
 
     def writeFile(self, filename):
         data = {"profileNames": self._profileNames}
