@@ -43,6 +43,11 @@ def start_backend_if_needed(proto_path: str, project_root: str, port: int = BACK
 
     
 class MainWindow(QWidget):
+    
+    def _path(self, filename: str) -> str:
+        # Put all manager/profile json files next to ProfileManager.py
+        return os.path.join(self._base_dir, filename)
+    
     def __init__(self):
         super().__init__()
         ui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "test.ui")
@@ -160,15 +165,15 @@ class MainWindow(QWidget):
             action_list = default_profile.getActionList() or []
             for act in action_list:
                 self.build_action_row(self.scroll_layout, profile_id= "Default", act=act)
-            else:
-                print ("F")
-                file_name = "Default"
-                path = self.PARENT_DIR / file_name
-                try:
-                    with open(path, "w") as f:
-                        json.dump(self._gestures, f, indent=4)
-                except Exception as e:
-                    print(f"[Error] Failed to save gestures: {e}") 
+        else:
+            print ("F")
+            
+            path = self.PARENT_DIR / default_file
+            try:
+                with open(path, "w") as f:
+                    json.dump(self._gestures, f, indent=4)
+            except Exception as e:
+                print(f"[Error] Failed to save gestures: {e}") 
         
         for files in json_files:
             name = files.stem.replace("profile_", "", 1)
@@ -179,7 +184,9 @@ class MainWindow(QWidget):
             if scroll.property("individual_sub_bar_container") is True:
                 current_scroll_content = scroll.widget()
                 current_scroll_layout = current_scroll_content.layout()
-                current_profile = self.profiles.loadProfile(name)
+                if (os.path.exists(self._path(name))):
+                    current_profile = self.profiles.loadProfile(name)
+                    
                 if current_profile is None:
                     print("[UI] Profile not found / failed to load.")
                     return
