@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
     QStatusBar, QMessageBox, QLabel, QPushButton, 
     QLineEdit, QComboBox, QTabBar, QToolButton, QDialog, QScrollArea, 
-    QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox
+    QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox, QInputDialog
 )
 from pathlib import Path
 from ProfileManager import ProfileManager
@@ -129,6 +129,8 @@ class MainWindow(QWidget):
         self.new_gesture_button = self.window.findChild(QPushButton, "addition_button")
         self.new_gesture_button.clicked.connect(self.new_gesture_dialog)
         
+        self.tabs.tabBarDoubleClicked.connect(self.tab_rename)
+        
         base_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.abspath(os.path.join(base_dir, ".."))
         proto_path = os.path.join(project_root, "prototypeV2.py")
@@ -150,7 +152,23 @@ class MainWindow(QWidget):
         json_files = self.PARENT_DIR.glob("profile_*.json")
         index = 1
         profiles = ProfileManager()
-        trash_path = os.path.join(RESOURCE_DIR, "resource", "Recycle-Bin-2--Streamline-Core.png")
+        
+        default_file = ("Default.json")
+        default_path = self.PARENT_DIR / default_file
+        if (default_path.exists()):
+            default_profile = profiles.loadProfile("Default")
+            action_list = default_profile.getActionList() or []
+            for act in action_list:
+                self.build_action_row(self.scroll_layout, profile_id= "Default", act=act)
+            else:
+                file_name = "Default"
+                path = self.PARENT_DIR / file_name
+                try:
+                    with open(path, "w") as f:
+                        json.dump(self._gestures, f, indent=4)
+                except Exception as e:
+                    print(f"[Error] Failed to save gestures: {e}") 
+        
         for files in json_files:
             name = files.stem.replace("profile_", "", 1)
             self.new_tab_button(index)
@@ -203,6 +221,21 @@ class MainWindow(QWidget):
         except Exception as e:
             return f"ERR: {e}"
         
+    def tab_rename(self, index):
+        PM = ProfileManager()
+        text, ok = QInputDialog.getText(
+        self,
+        "Rename Tab",
+        "Enter new name:"
+        )
+        if ok and text:
+            current_name = self.tabs.tabText(index)
+            self.tabs.setTabText(index, text)
+            PM.renameProfile(current_name, text)
+            old_path = self.PARENT_DIR / f"profile_{current_name}.json"
+            new_path = self.PARENT_DIR / f"profile_{text}.json"
+            old_path.rename(new_path)
+    
     #function for the new tab button
     def new_tab_button(self, index):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
