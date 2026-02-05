@@ -176,8 +176,9 @@ class MainWindow(QWidget):
             #     print(f"[Error] Failed to save gestures: {e}") 
         
         for files in json_files:
-            if (files.stem != "Default.Json"):
-                name = files.stem.replace("profile", "", 1)
+            print("[Files]: ", files.stem)
+            if (files.stem != "Default"):
+                name = files.stem.replace("profile_", "", 1)
             else:
                 name = "Default"
             self.new_tab_button(index)

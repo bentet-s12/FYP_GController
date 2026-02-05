@@ -1,4 +1,10 @@
 {
     "Profile_ID": "Default",
-    "Actions": []
+    "Actions": [ {
+            "name": "accelerate",
+            "G_name": "up",
+            "key_pressed": "w",
+            "input_type": "Hold",
+            "key_type": "Keyboard"
+        }]
 }
