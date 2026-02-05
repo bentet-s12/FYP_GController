@@ -28,7 +28,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data", "landmarkVectors")
 MODEL_TASK_PATH = os.path.join(SCRIPT_DIR, "data", "models", "hand_landmarker.task")
 
 # IMPORTANT: this must match your real file name
-PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "profile_1.json")
+PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "Default.json")
 GESTURELIST_JSON_PATH = os.path.join(SCRIPT_DIR, "GestureList.json")
 STRICT_GESTURELIST = True  # if True: ignore profile mappings whose gesture is not in GestureList.json
 
@@ -812,7 +812,6 @@ class CommandServer(threading.Thread):
                             self.app.running = False
                             self._stop_flag = True
                             conn.sendall(b"OK\n")
-
                         elif data.startswith("CREATE_GESTURE"):
                             parts = data.split(maxsplit=1)
                             if len(parts) < 2 or not parts[1].strip():
@@ -827,6 +826,13 @@ class CommandServer(threading.Thread):
                             else:
                                 self.app._delete_req_name = parts[1].strip()
                                 conn.sendall(b"OK\n")
+                        elif data.startswith("SET_PROFILE"):
+                            parts = data.split(maxsplit=1)
+                            if len(parts) < 2 or not parts[1].strip():
+                                conn.sendall(b"ERR Empty profile id\n")
+                            else:
+                                ok = self.app.set_active_profile(parts[1].strip())
+                                conn.sendall(b"OK\n" if ok else b"ERR Failed\n")
                         else:
                             conn.sendall(b"UNKNOWN\n")
 
@@ -930,6 +936,8 @@ class GestureControllerApp:
         self._tk_pump_interval = 1.0 / 60.0   # 60 Hz (use 1/30 if you want)
 
         self._delete_req_name = None
+        self._req_profile_id = None
+        self.current_profile_path = PROFILE_JSON_PATH
 
 
         if self.enable_camera:
@@ -1063,7 +1071,27 @@ class GestureControllerApp:
             self._held_counts[token] = c
 
     def reload_profile_actions(self):
-        self.action_map = load_actions_from_profile_json(PROFILE_JSON_PATH)
+        # ---- active profile (dynamic, not hardcoded) ----
+        self.active_profile_id = "1"
+        self.active_profile_path = os.path.join(SCRIPT_DIR, f"profile_{self.active_profile_id}.json")
+
+        self.action_map = load_actions_from_profile_json(self.active_profile_path)
+
+    def set_active_profile(self, profile_id: str) -> bool:
+        pid = (profile_id or "").strip()
+        if not pid:
+            return False
+
+        self.active_profile_id = pid
+        self.active_profile_path = os.path.join(SCRIPT_DIR, f"profile_{pid}.json")
+
+        print("[PROFILE] Switching to:", self.active_profile_path,
+            "exists=", os.path.exists(self.active_profile_path), flush=True)
+
+        self.action_map = load_actions_from_profile_json(self.active_profile_path)
+        return True
+
+
 
     def request_collect_gesture(self, name: str):
         name = (name or "").strip()
@@ -1742,6 +1770,24 @@ class GestureControllerApp:
                 name = self._collect_req_name
                 self._collect_req_name = None
                 self._start_collect_mode(name)
+
+            if self._req_profile_id is not None:
+                pid = (self._req_profile_id or "").strip()
+                self._req_profile_id = None
+
+                # Accept: "1", "profile_1", "profile_1.json", "Default", "Default.json"
+                if pid.lower().endswith(".json"):
+                    new_path = os.path.join(SCRIPT_DIR, pid)
+                elif pid.startswith("profile_"):
+                    new_path = os.path.join(SCRIPT_DIR, f"{pid}.json")
+                elif pid.lower() == "default":
+                    new_path = os.path.join(SCRIPT_DIR, "Default.json")
+                else:
+                    new_path = os.path.join(SCRIPT_DIR, f"profile_{pid}.json")
+
+                print("[PROFILE] Switching to:", new_path, "exists=", os.path.exists(new_path), flush=True)
+                self.action_map = load_actions_from_profile_json(new_path)
+
 
             ret, frame_raw = self.cap.read()
             if not ret:

@@ -1,0 +1,16 @@
+<RCC>
+  <qresource prefix="images">
+    <file>Webcam-Video-Circle--Streamline-Core.png</file>
+    <file>Definition-Search-Book--Streamline-Core.png</file>
+    <file>Button-Power-1--Streamline-Core.png</file>
+    <file>Chat-Bubble-Square-Question--Streamline-Core.png</file>
+    <file>Button-Play--Streamline-Core.png</file>
+    <file>Add-1--Streamline-Core.png</file>
+    <file>Add-Circle--Streamline-Core.png</file>
+    <file>Camera-1--Streamline-Core.png</file>
+    <file>Cog--Streamline-Core.png</file>
+    <file>Delete-1--Streamline-Core.png</file>
+    <file>Recycle-Bin-2--Streamline-Core.png</file>
+    <file>Webcam-Video--Streamline-Core.png</file>
+  </qresource>
+</RCC>

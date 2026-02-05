@@ -64,7 +64,7 @@ class MainWindow(QWidget):
         self.tabs = self.window.findChild(QTabWidget, "tabWidget")
         self.tabs.setTabsClosable(True)
         self.tabs.tabCloseRequested.connect(self.close_tab)
-
+        self.tabs.setTabText(0, "Default")
         # the new tab button is actually a tab itself, i just make it so that it behaves like a new tab button
         self.tabs.addTab(QWidget(), "")
         self.last_tab_index = self.tabs.count() - 1
@@ -72,6 +72,7 @@ class MainWindow(QWidget):
         self.tabs.tabBar().setTabData(self.last_tab_index, "add_tab_button")
         self.tabs.tabBar().setTabText(self.last_tab_index, "")
         self.tabs.tabBar().tabBarClicked.connect(self.new_tab_button)
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         
         #spacer is a croner widget for the tab bar, can only implement a corner widget through python, the purpose of this spacer is to prevent
         # the tab bar overlapping with the main power button
@@ -130,9 +131,9 @@ class MainWindow(QWidget):
         self.scroll_container.setWidgetResizable(True)
         
         self.new_gesture_button = self.window.findChild(QPushButton, "addition_button")
-        self.new_gesture_button.clicked.connect(self.new_gesture_dialog)
+        self.new_gesture_button.clicked.connect(self.new_gesture_button_function)
         self.tabs.tabBarDoubleClicked.connect(self.tab_rename)
-        self.tabs.currentChanged.connect(self.on_tab_changed)
+        QTimer.singleShot(800, lambda: self._on_tab_changed(self.tabs.currentIndex()))
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.abspath(os.path.join(base_dir, ".."))
@@ -147,35 +148,86 @@ class MainWindow(QWidget):
             project_root=project_root,
             port=50555
         )
+        # Force backend to load active profile on startup (wait until backend answers PING)
+        def _boot_set_profile():
+            if backend_is_running():
+                self._on_tab_changed(self.tabs.currentIndex())
+            else:
+                # try again shortly (backend still booting)
+                QTimer.singleShot(300, _boot_set_profile)
+
+        QTimer.singleShot(300, _boot_set_profile)
+
         
         self.BASE_DIR = Path(__file__).parent
         self.PARENT_DIR = self.BASE_DIR.parent
         RESOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
         
-        json_files = self.PARENT_DIR.glob("profile_*.json")
-        index = 1
-        profiles = self.profiles
-        trash_path = os.path.join(RESOURCE_DIR, "resource", "Recycle-Bin-2--Streamline-Core.png")
-        for files in json_files:
-            name = files.stem.replace("profile_", "", 1)
-            self.new_tab_button(index)
-            self.tabs.setTabText(index, name)
-            tab = self.tabs.widget(index)
-            scroll = tab.findChild(QScrollArea)
-            if scroll.property("individual_sub_bar_container") is True:
-                current_scroll_content = scroll.widget()
-                current_scroll_layout = current_scroll_content.layout()
-                current_profile = self.profiles.loadProfile(name)
-                if current_profile is None:
-                    print("[UI] Profile not found / failed to load.")
-                    return
+        # ---- Load existing profiles into tabs (DO NOT use new_tab_button here) ----
+        json_files = sorted(self.PARENT_DIR.glob("profile_*.json"))
+        # ===== Load Default.json into EXISTING tab 0 =====
+        default_idx = 0
+        default_profile_id = "Default"
 
-                current_action_list = current_profile.getActionList() or []
-                
-                for act in current_action_list:
-                    self.build_action_row(current_scroll_layout, profile_id=name, act=act)
-                
-            index += 1
+        tab = self.tabs.widget(default_idx)
+        scroll = tab.findChild(QScrollArea)
+        if scroll and scroll.property("individual_sub_bar_container") is True:
+            layout = scroll.widget().layout()
+            self._clear_layout(layout)
+
+            data = self._load_profile_json(default_profile_id)
+            actions = data.get("Actions", [])
+            if not isinstance(actions, list):
+                actions = []
+
+            class _ActShim:
+                def __init__(self, d): self._d = d
+                def getGName(self): return self._d.get("G_name")
+                def getKeyPressed(self): return self._d.get("key_pressed")
+                def getInputType(self): return self._d.get("input_type")
+                def getName(self): return self._d.get("name")
+
+            for row in actions:
+                if isinstance(row, dict):
+                    self.build_action_row(layout, profile_id=default_profile_id, act=_ActShim(row))
+
+        for files in json_files:
+            if files.name == "Default.json":
+                profile_id = "Default"
+            else:
+                profile_id = files.stem.replace("profile_", "", 1)
+
+            tab_index = self._add_profile_tab(profile_id)
+
+            tab = self.tabs.widget(tab_index)
+            scroll = tab.findChild(QScrollArea)
+            if scroll and scroll.property("individual_sub_bar_container") is True:
+                layout = scroll.widget().layout()
+                current_profile = self.profiles.loadProfile(profile_id)
+                if current_profile is not None:
+                    for act in (current_profile.getActionList() or []):
+                        self.build_action_row(layout, profile_id=profile_id, act=act)
+                else:
+                    # ProfileManager couldn't load it (likely Default.json). Load raw JSON and build rows.
+                    data = self._load_profile_json(profile_id)
+                    actions = data.get("Actions", [])
+                    if not isinstance(actions, list):
+                        actions = []
+
+                    class _ActShim:
+                        def __init__(self, d): self._d = d
+                        def getGName(self): return self._d.get("G_name")
+                        def getKeyPressed(self): return self._d.get("key_pressed")
+                        def getInputType(self): return self._d.get("input_type")
+                        def getName(self): return self._d.get("name")
+
+                    for row in actions:
+                        if isinstance(row, dict):
+                            self.build_action_row(layout, profile_id=profile_id, act=_ActShim(row))
+
+
+
+
 
         # --- GestureList.json watcher (same polling refresh logic as library dialog) ---
         self._gesturelist_refreshing = False
@@ -186,19 +238,32 @@ class MainWindow(QWidget):
         except Exception:
             self._gesturelist_last_mtime = None
 
-        # Force backend to load active profile on startup
-        self.on_tab_changed(self.tabs.currentIndex())
-
-
+        
         self._gesturelist_timer = QTimer(self)
         self._gesturelist_timer.timeout.connect(self._tick_gesturelist_refresh)
         self._gesturelist_timer.start(500)
+
+        # ensure we are actually on Default tab (if it exists)
+        for i in range(self.tabs.count()):
+            if self.tabs.tabBar().tabData(i) == "add_tab_button":
+                continue
+            if self.tabs.tabText(i).strip() == "Default":
+                self.tabs.setCurrentIndex(i)
+                self._on_tab_changed(i)   # tell backend too
+                break
+
+        QTimer.singleShot(50, self._reload_active_tab_actions)
+
+    def _profile_id_for_tab(self, idx: int) -> str:
+        if idx == 0:
+            return "Default"
+        return self.tabs.tabText(idx).strip()
 
 
     # main command sender
     def send_cmd(self, cmd: str):
         try:
-            with socket.create_connection((BACKEND_HOST, BACKEND_PORT), timeout=1.0) as s:
+            with socket.create_connection((BACKEND_HOST, BACKEND_PORT), timeout=3.0) as s:
                 s.settimeout(1.0)
                 s.sendall((cmd.strip() + "\n").encode("utf-8"))
 
@@ -242,15 +307,14 @@ class MainWindow(QWidget):
 
         # Update tab label
         self.tabs.setTabText(index, new_name)
-        self.on_tab_changed(index)
+        self._on_tab_changed(index)
 
 
-    def on_tab_changed(self, index: int):
-        # Ignore the "+" tab
-        if self.tabs.tabBar().tabData(index) == "add_tab_button":
+    def _on_tab_changed(self, idx: int):
+        if self.tabs.tabBar().tabData(idx) == "add_tab_button":
             return
 
-        profile_id = (self.tabs.tabText(index) or "").strip()
+        profile_id = self._profile_id_for_tab(idx)
         if not profile_id:
             return
 
@@ -268,80 +332,116 @@ class MainWindow(QWidget):
         setting_path = os.path.join(BASE_DIR, "resource", "Cog--Streamline-Core.png")
         #check if the tab clicked is the last tab
         if self.tabs.tabBar().tabData(index) == "add_tab_button":
-            
-            #needed for resize purpose
-            geom = self.geometry()
-            x = (geom.width() - 1698) // 2 + 99
-            
-            # Insert new tab BEFORE the "+" tab
-            insert_index = self.last_tab_index
-            new_tab = QWidget()
-            new_tab.setStyleSheet("""
+            # 1) create profile id + json file
+            new_profile_id = self._generate_new_profile_id()
+            ok = self._create_profile_file(new_profile_id)
+            if not ok:
+                QMessageBox.warning(self, "Create Profile Failed", "Could not create profile JSON file.")
+                return
+
+            # 2) build tab UI (buttons + scroll) in ONE place
+            tab_index = self._add_profile_tab(new_profile_id)
+
+            # 3) switch to it
+            self.tabs.setCurrentIndex(tab_index)
+
+            # 4) tell backend
+            self._on_tab_changed(tab_index)
+            return
+
+
+    def _add_profile_tab(self, profile_id: str) -> int:
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        library_path = os.path.join(BASE_DIR, "resource", "Definition-Search-Book--Streamline-Core.png")
+        plus_path    = os.path.join(BASE_DIR, "resource", "Add-Circle--Streamline-Core.png")
+        camera_path  = os.path.join(BASE_DIR, "resource", "Camera-1--Streamline-Core.png")
+        setting_path = os.path.join(BASE_DIR, "resource", "Cog--Streamline-Core.png")
+
+        # needed for resize purpose
+        geom = self.geometry()
+        x = (geom.width() - 1698) // 2 + 99
+
+        # Insert new tab BEFORE the "+" tab
+        insert_index = self.last_tab_index
+
+        new_tab = QWidget()
+        new_tab.setStyleSheet("""
             QWidget {
                 background-color: rgb(60, 56, 77);
-            }                      
-            """)
-            
-            #below are the four buttons inserted to the new tab
-            new_four_buttons_container = QWidget(new_tab)
-            new_four_buttons_container.setGeometry(1178, 40, 470, 80)
-            new_four_buttons_container.move(max(geom.width() - new_four_buttons_container.width()-50, 0), new_four_buttons_container.y())
-            new_four_buttons_container.setProperty("4_buttons_container", True)
-            
-            library_button = QPushButton(new_four_buttons_container)
-            library_button.setGeometry(0,0,80,80)
-            library_button.setIcon(QIcon(library_path))
-            library_button.setIconSize(QSize(50, 50))
-            library_button.setFlat(True)
-            library_button.clicked.connect(self.on_library_clicked)
-            
-            plus_button = QPushButton(new_four_buttons_container)
-            plus_button.setGeometry(130,0,80,80)
-            plus_button.setIcon(QIcon(plus_path))
-            plus_button.setIconSize(QSize(50,50))
-            plus_button.setFlat(True)
-            plus_button.clicked.connect(self.new_gesture_button_function)
-            
-            camera_button = QPushButton(new_four_buttons_container)
-            camera_button.clicked.connect(self.on_camera_clicked)
-            camera_button.setGeometry(260, 0, 80,80)
-            camera_button.setIcon(QIcon(camera_path))
-            camera_button.setIconSize(QSize(50,50))
-            camera_button.setFlat(True)
-            
-            setting_button = QPushButton(new_four_buttons_container)
-            setting_button.clicked.connect(self.on_setting_clicked)
-            setting_button.setGeometry(390, 0, 80, 80)
-            setting_button.setIcon(QIcon(setting_path))
-            setting_button.setIconSize(QSize(50,50))
-            setting_button.setFlat(True)
-            
-            #add scroll area to new tab
-            scroll_container = QScrollArea(new_tab)
-            scroll_container.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-            scroll_container.setGeometry(99,150,1599, 962)
-            scroll_container.setGeometry(max(x,0), scroll_container.y(), max(geom.width()-scroll_container.x(),0), max(962+geom.height()-1183, 0))
-            scroll_content = QWidget()
-            scroll_container.setWidget(scroll_content)
-            scroll_layout = QVBoxLayout(scroll_content)
-            scroll_layout.setAlignment(Qt.AlignTop)
-            scroll_container.setWidgetResizable(True)
-            scroll_container.setStyleSheet ("""
-            border: none;                                
-                                            """)
-            scroll_container.setProperty("individual_sub_bar_container", True)
-            
-            
-            self.tabs.insertTab(insert_index, new_tab, f"Tab {insert_index + 1}")
+            }
+        """)
 
-            # Move "+" tab to the end again
-            self.last_tab_index += 1
-            self.tabs.tabBar().setTabData(self.last_tab_index, "add_tab_button")
-            self.tabs.tabBar().setTabText(self.last_tab_index, "")
-            self.tabs.tabBar().setTabButton(self.last_tab_index, QTabBar.RightSide, None)
+        # ---- 4 buttons container ----
+        new_four_buttons_container = QWidget(new_tab)
+        new_four_buttons_container.setGeometry(1178, 40, 470, 80)
+        new_four_buttons_container.move(max(geom.width() - new_four_buttons_container.width()-50, 0),
+                                        new_four_buttons_container.y())
+        new_four_buttons_container.setProperty("4_buttons_container", True)
 
-            # Switch to the newly created tab
-            self.tabs.setCurrentIndex(insert_index)
+        library_button = QPushButton(new_four_buttons_container)
+        library_button.setGeometry(0,0,80,80)
+        library_button.setIcon(QIcon(library_path))
+        library_button.setIconSize(QSize(50, 50))
+        library_button.setFlat(True)
+        library_button.clicked.connect(self.on_library_clicked)
+
+        plus_button = QPushButton(new_four_buttons_container)
+        plus_button.setGeometry(130,0,80,80)
+        plus_button.setIcon(QIcon(plus_path))
+        plus_button.setIconSize(QSize(50,50))
+        plus_button.setFlat(True)
+        plus_button.clicked.connect(self.new_gesture_button_function)
+
+        camera_button = QPushButton(new_four_buttons_container)
+        camera_button.setGeometry(260, 0, 80,80)
+        camera_button.setIcon(QIcon(camera_path))
+        camera_button.setIconSize(QSize(50,50))
+        camera_button.setFlat(True)
+        camera_button.clicked.connect(self.on_camera_clicked)
+
+        setting_button = QPushButton(new_four_buttons_container)
+        setting_button.setGeometry(390, 0, 80, 80)
+        setting_button.setIcon(QIcon(setting_path))
+        setting_button.setIconSize(QSize(50,50))
+        setting_button.setFlat(True)
+        setting_button.clicked.connect(self.on_setting_clicked)
+
+        # ---- scroll area ----
+        scroll_container = QScrollArea(new_tab)
+        scroll_container.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+        scroll_container.setGeometry(99,150,1599, 962)
+        scroll_container.setGeometry(max(x,0), scroll_container.y(),
+                                    max(geom.width()-scroll_container.x(),0),
+                                    max(962+geom.height()-1183, 0))
+        scroll_container.setStyleSheet("border: none;")
+        scroll_container.setProperty("individual_sub_bar_container", True)
+
+        scroll_content = QWidget()
+        scroll_container.setWidget(scroll_content)
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setAlignment(Qt.AlignTop)
+        scroll_container.setWidgetResizable(True)
+
+        # ---- insert the tab ----
+        self.tabs.insertTab(insert_index, new_tab, profile_id)
+
+        # keep "+" tab at the end
+        self.last_tab_index = self.tabs.count() - 1
+        self.tabs.tabBar().setTabData(self.last_tab_index, "add_tab_button")
+        self.tabs.tabBar().setTabText(self.last_tab_index, "")
+        self.tabs.tabBar().setTabButton(self.last_tab_index, QTabBar.RightSide, None)
+
+        return insert_index
+
+
+    def _create_new_profile_file(self, profile_id: str):
+        path = self._profile_path(profile_id)
+        if os.path.exists(path):
+            return False
+        data = {"Profile_ID": profile_id, "Actions": []}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        return True
 
     def close_tab(self, index):
         # Never close the first tab
@@ -392,7 +492,7 @@ class MainWindow(QWidget):
             if index < next_index:
                 next_index -= 1
             self.tabs.setCurrentIndex(max(0, min(next_index, self.tabs.count() - 2)))
-            self.on_tab_changed(self.tabs.currentIndex())
+            self._on_tab_changed(self.tabs.currentIndex())
 
 
 
@@ -402,6 +502,46 @@ class MainWindow(QWidget):
             w = item.widget()
             if w is not None:
                 w.deleteLater()
+    
+    def _reload_active_tab_actions(self):
+        idx = self.tabs.currentIndex()
+        if self.tabs.tabBar().tabData(idx) == "add_tab_button":
+            return
+
+        profile_id = self.tabs.tabText(idx).strip()
+        if not profile_id:
+            return
+
+        tab = self.tabs.widget(idx)
+        if tab is None:
+            return
+
+        scroll = tab.findChild(QScrollArea)
+        if scroll is None or scroll.property("individual_sub_bar_container") is not True:
+            return
+
+        content = scroll.widget()
+        layout = content.layout()
+        if layout is None:
+            return
+
+        # 1) clear UI rows
+        self._clear_layout(layout)
+
+        # 2) rebuild from JSON via ProfileManager
+        current_profile = self.profiles.loadProfile(profile_id)
+        if current_profile is None:
+            print("[UI] reload tab: profile not found:", profile_id)
+            return
+
+        current_action_list = current_profile.getActionList() or []
+        for act in current_action_list:
+            self.build_action_row(layout, profile_id=profile_id, act=act)
+
+        # 3) ensure backend uses latest mappings for this profile
+        resp = self.send_cmd(f"SET_PROFILE {profile_id}")
+        print("[UI] Reloaded active tab + SET_PROFILE ->", resp)
+
                 
     def on_library_clicked(self):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -665,9 +805,13 @@ class MainWindow(QWidget):
 
             resp = self.send_cmd(f"CREATE_GESTURE {gname}")
             if resp.startswith("OK"):
+                # update dropdowns immediately + reload current tab rows
+                self._refresh_action_dropdowns_from_gesturelist()
+                self._reload_active_tab_actions()
                 dialog.accept()
             else:
                 QMessageBox.critical(self, "Create Gesture Failed", resp)
+
 
         buttons.accepted.connect(on_ok)
         buttons.rejected.connect(dialog.reject)
@@ -723,8 +867,42 @@ class MainWindow(QWidget):
         super().resizeEvent(event)
 
     def _profile_path(self, profile_id: str) -> str:
-        # your profiles live in ML_FILES (parent of designerapp)
+        if profile_id == "Default":
+            return str(self.PARENT_DIR / "Default.json")
         return str(self.PARENT_DIR / f"profile_{profile_id}.json")
+
+    
+    def _sanitize_profile_id(self, name: str) -> str:
+        # Keep it simple: spaces -> underscore, strip
+        out = (name or "").strip().replace(" ", "_")
+        # optional extra safety: remove weird chars
+        out = "".join(ch for ch in out if ch.isalnum() or ch in ("_", "-"))
+        return out
+
+    def _profile_exists(self, profile_id: str) -> bool:
+        return os.path.exists(self._profile_path(profile_id))
+
+    def _generate_new_profile_id(self) -> str:
+        # Generates Profile_1, Profile_2, ...
+        i = 1
+        while True:
+            pid = f"Profile_{i}"
+            if not self._profile_exists(pid):
+                return pid
+            i += 1
+
+    def _create_profile_file(self, profile_id: str) -> bool:
+        try:
+            path = self._profile_path(profile_id)
+            if os.path.exists(path):
+                return False
+            data = {"Profile_ID": profile_id, "Actions": []}
+            self._save_profile_json(profile_id, data)
+            return True
+        except Exception as e:
+            print("[UI] Failed to create profile file:", e)
+            return False
+
 
     def _load_profile_json(self, profile_id: str) -> dict:
         path = self._profile_path(profile_id)
@@ -765,7 +943,13 @@ class MainWindow(QWidget):
         # profile_<id>.json is beside ProfileManager.py, so use ProfileManager's base_dir for correct pathing
         profiles = ProfileManager()
         base_dir = os.path.dirname(os.path.abspath(__import__("ProfileManager").__file__))
-        profile_path = os.path.join(base_dir, f"profile_{profile_id}.json")
+        profile_path = self._profile_path(profile_id)
+
+        if not os.path.exists(profile_path):
+            print("[UI] save_action_edit: profile file missing:", profile_path)
+            return
+
+
 
         if not os.path.exists(profile_path):
             print("[UI] save_action_edit: profile file missing:", profile_path)

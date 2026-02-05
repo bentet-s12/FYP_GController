@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1698</width>
+    <height>1183</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true">background-color: rgb(0, 0, 0);</string>
+  </property>
+  <widget class="QTabWidget" name="tabWidget">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>20</y>
+     <width>1698</width>
+     <height>1163</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">QTabBar {
+	border:none;
+}
+
+QTabWidget {
+	background-color: rgb(3, 0, 19);
+}
+
+QTabBar::tab {
+	background-color: rgb(37, 36, 56);
+    color: #e0dde5;
+    padding: 8px 16px;
+    border-radius: 8px;
+    margin-left: 10px;
+    margin-bottom: 5px;
+	width: 150px;
+	height: 30px;
+}
+
+QTabBar::tab:selected {
+	background-color: rgb(60, 56, 77);
+	border-bottom-left-radius: 0px; 
+	border-bottom-right-radius: 0px; 
+	margin-bottom: -1px;
+	padding: 8px 16px 14px 16px;
+}
+
+QTabWidget::pane {
+	
+	background-color: rgb(60, 56, 77);
+
+}
+QTabBar::close-button {
+image: url(:/images/Delete-1--Streamline-Core.png);
+padding: 1px 3px 5px 3px;
+subcontrol-origin: padding;
+subcontrol-position: right;
+}
+
+QTabBar::tab:last {
+image: url(:/images/Add-1--Streamline-Core.png);
+width: 32px;
+height: 32px;
+border-radius: 16px;
+padding: 0px;
+background-color: transparent;
+border:none;
+margin-top: 8px;
+}
+
+QTabBar::tab:last:hover {
+	
+	background-color: rgb(37, 36, 56);
+}
+</string>
+   </property>
+   <property name="tabShape">
+    <enum>QTabWidget::TabShape::Rounded</enum>
+   </property>
+   <property name="currentIndex">
+    <number>0</number>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>32</width>
+     <height>32</height>
+    </size>
+   </property>
+   <property name="usesScrollButtons">
+    <bool>true</bool>
+   </property>
+   <property name="documentMode">
+    <bool>false</bool>
+   </property>
+   <property name="tabsClosable">
+    <bool>true</bool>
+   </property>
+   <property name="movable">
+    <bool>false</bool>
+   </property>
+   <property name="tabBarAutoHide">
+    <bool>false</bool>
+   </property>
+   <widget class="QWidget" name="Default_tab">
+    <property name="styleSheet">
+     <string notr="true">background-color: rgb(60, 56, 77);
+</string>
+    </property>
+    <attribute name="title">
+     <string>1</string>
+    </attribute>
+    <widget class="QWidget" name="widget" native="true">
+     <property name="geometry">
+      <rect>
+       <x>1178</x>
+       <y>40</y>
+       <width>470</width>
+       <height>80</height>
+      </rect>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">background: transparent;</string>
+     </property>
+     <property name="4_buttons_container" stdset="0">
+      <bool>true</bool>
+     </property>
+     <widget class="QPushButton" name="library_button">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>80</width>
+        <height>80</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string/>
+      </property>
+      <property name="icon">
+       <iconset resource="resource/ICONS.qrc">
+        <normaloff>:/images/Definition-Search-Book--Streamline-Core.png</normaloff>:/images/Definition-Search-Book--Streamline-Core.png</iconset>
+      </property>
+      <property name="iconSize">
+       <size>
+        <width>50</width>
+        <height>50</height>
+       </size>
+      </property>
+      <property name="flat">
+       <bool>true</bool>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="addition_button">
+      <property name="geometry">
+       <rect>
+        <x>130</x>
+        <y>0</y>
+        <width>80</width>
+        <height>80</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string/>
+      </property>
+      <property name="icon">
+       <iconset resource="resource/ICONS.qrc">
+        <normaloff>:/images/Add-Circle--Streamline-Core.png</normaloff>:/images/Add-Circle--Streamline-Core.png</iconset>
+      </property>
+      <property name="iconSize">
+       <size>
+        <width>50</width>
+        <height>50</height>
+       </size>
+      </property>
+      <property name="flat">
+       <bool>true</bool>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="camera_button">
+      <property name="geometry">
+       <rect>
+        <x>260</x>
+        <y>0</y>
+        <width>80</width>
+        <height>80</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string/>
+      </property>
+      <property name="icon">
+       <iconset resource="resource/ICONS.qrc">
+        <normaloff>:/images/Camera-1--Streamline-Core.png</normaloff>:/images/Camera-1--Streamline-Core.png</iconset>
+      </property>
+      <property name="iconSize">
+       <size>
+        <width>50</width>
+        <height>50</height>
+       </size>
+      </property>
+      <property name="flat">
+       <bool>true</bool>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="setting_button">
+      <property name="geometry">
+       <rect>
+        <x>390</x>
+        <y>0</y>
+        <width>80</width>
+        <height>80</height>
+       </rect>
+      </property>
+      <property name="styleSheet">
+       <string notr="true">background: transparent;</string>
+      </property>
+      <property name="text">
+       <string/>
+      </property>
+      <property name="icon">
+       <iconset resource="resource/ICONS.qrc">
+        <normaloff>:/images/Cog--Streamline-Core.png</normaloff>:/images/Cog--Streamline-Core.png</iconset>
+      </property>
+      <property name="iconSize">
+       <size>
+        <width>50</width>
+        <height>50</height>
+       </size>
+      </property>
+      <property name="flat">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </widget>
+    <widget class="QScrollArea" name="scrollArea">
+     <property name="geometry">
+      <rect>
+       <x>99</x>
+       <y>150</y>
+       <width>1599</width>
+       <height>962</height>
+      </rect>
+     </property>
+     <property name="styleSheet">
+      <string notr="true">border: none;</string>
+     </property>
+     <property name="verticalScrollBarPolicy">
+      <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOn</enum>
+     </property>
+     <property name="horizontalScrollBarPolicy">
+      <enum>Qt::ScrollBarPolicy::ScrollBarAlwaysOff</enum>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <property name="individual_sub_bar_container" stdset="0">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="scrollAreaWidgetContents">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>1587</width>
+        <height>962</height>
+       </rect>
+      </property>
+     </widget>
+    </widget>
+   </widget>
+  </widget>
+  <widget class="QPushButton" name="PowerButton">
+   <property name="geometry">
+    <rect>
+     <x>1628</x>
+     <y>10</y>
+     <width>60</width>
+     <height>60</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string/>
+   </property>
+   <property name="icon">
+    <iconset resource="resource/ICONS.qrc">
+     <normaloff>:/images/Button-Power-1--Streamline-Core.png</normaloff>:/images/Button-Power-1--Streamline-Core.png</iconset>
+   </property>
+   <property name="iconSize">
+    <size>
+     <width>50</width>
+     <height>50</height>
+    </size>
+   </property>
+   <property name="flat">
+    <bool>true</bool>
+   </property>
+  </widget>
+ </widget>
+ <resources>
+  <include location="resource/ICONS.qrc"/>
+ </resources>
+ <connections/>
+</ui>

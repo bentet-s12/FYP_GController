@@ -1,0 +1,19 @@
+{
+    "Profile_ID": "Default",
+    "Actions": [
+        {
+            "name": "test",
+            "G_name": "up",
+            "key_pressed": null,
+            "input_type": "Click",
+            "key_type": null
+        },
+        {
+            "name": "testing",
+            "G_name": "testt",
+            "key_pressed": "t",
+            "input_type": "Hold",
+            "key_type": null
+        }
+    ]
+}
