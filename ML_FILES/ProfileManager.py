@@ -87,20 +87,19 @@ class ProfileManager:
         return self._profileNames
 
     def loadProfile(self, profileName):
-        if(profileName != "Default"):
-            filename = f"profile_{profileName}.json"
-            fullpath = self._path(filename)
-            print("[DEBUG] loadProfile() fullpath =", fullpath)  # <--- add this
-            if not os.path.exists(fullpath):
-                print(f"[Error] File '{fullpath}' does not exist!")
-                return None
-            
-            return Profile.readFile(fullpath)
+        # Determine the filename based on the ID
+        if profileName == "Default":
+            filename = "default.json" # Or "Default.json" - be consistent!
         else:
-            filename = f"{profileName}.json"
-            fullpath = self._path(filename)
-            
-            return Profile.readFile(fullpath)
+            filename = f"profile_{profileName}.json"
+        
+        fullpath = self._path(filename)
+        
+        if not os.path.exists(fullpath):
+            print(f"[Error] File '{fullpath}' does not exist!")
+            return None
+        
+        return Profile.readFile(fullpath, base_dir=self._base_dir)
 
     def getProfile(self, profileName):
         if profileName in self._profileNames:
