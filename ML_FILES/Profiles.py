@@ -40,22 +40,22 @@ class Profile:
         return profile
 
     def writeFile(self, filename=None):
-    if filename is None:
-        # Check if this is the special Default profile
-        if self._Profile_ID == "Default":
-            filename = "Default.json"
-        else:
-            filename = f"profile_{self._Profile_ID}.json"
-            
-        filename = self._abs(filename)
+        if filename is None:
+            # Check if this is the special Default profile
+            if self._Profile_ID == "Default":
+                filename = "Default.json"
+            else:
+                filename = f"profile_{self._Profile_ID}.json"
+                
+            filename = self._abs(filename)
 
-        data = {
-            "Profile_ID": self._Profile_ID,
-            "Actions": [action.toDict() for action in self._ActionList]
-        }
+            data = {
+                "Profile_ID": self._Profile_ID,
+                "Actions": [action.toDict() for action in self._ActionList]
+            }
 
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4)
+            with open(filename, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4)
 
     def deleteSelf(self):
         filename = self._abs(f"profile_{self._Profile_ID}.json")
