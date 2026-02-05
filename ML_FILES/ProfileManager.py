@@ -50,7 +50,7 @@ class ProfileManager:
             self._profileNames.append(profileName)
             self.writeFile("profileManager.json")
             new_profile = Profile(profileName)
-            new_profile.writeFile(self._path(f"profile_{profileName}.json"))
+            new_profile.writeFile()
             print(f"[OK] Profile '{profileName}' created.")
             return True
         return False

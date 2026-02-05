@@ -40,9 +40,13 @@ class Profile:
         return profile
 
     def writeFile(self, filename=None):
-        # Default profile_<id>.json in base_dir
-        if filename is None:
+    if filename is None:
+        # Check if this is the special Default profile
+        if self._Profile_ID == "Default":
+            filename = "Default.json"
+        else:
             filename = f"profile_{self._Profile_ID}.json"
+            
         filename = self._abs(filename)
 
         data = {
