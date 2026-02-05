@@ -167,13 +167,13 @@ class MainWindow(QWidget):
                 self.build_action_row(self.scroll_layout, profile_id= "Default", act=act)
         else:
             print ("F")
-            
-            path = self.PARENT_DIR / default_file
-            try:
-                with open(path, "w") as f:
-                    json.dump(self._gestures, f, indent=4)
-            except Exception as e:
-                print(f"[Error] Failed to save gestures: {e}") 
+            self.profiles.addProfile("Default")
+            # path = self.PARENT_DIR / default_file
+            # try:
+            #     with open(path, "w") as f:
+            #         json.dump(self._gestures, f, indent=4)
+            # except Exception as e:
+            #     print(f"[Error] Failed to save gestures: {e}") 
         
         for files in json_files:
             name = files.stem.replace("profile_", "", 1)
