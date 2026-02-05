@@ -4,7 +4,7 @@
         {
             "name": "MoveForward",
             "G_name": "MoveGesture",
-            "key_pressed": "w",
+            "key_pressed": null,
             "input_type": "Hold",
             "key_type": "Keyboard"
         }

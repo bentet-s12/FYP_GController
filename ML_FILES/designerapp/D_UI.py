@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
     QStatusBar, QMessageBox, QLabel, QPushButton, 
     QLineEdit, QComboBox, QTabBar, QToolButton, QDialog, QScrollArea, 
-    QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox
+    QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox, QInputDialog
 )
 from pathlib import Path
 from ProfileManager import ProfileManager
@@ -54,9 +54,12 @@ class MainWindow(QWidget):
         file.close()
         if self.window is None:
             raise RuntimeError(loader.errorString())
-        
-        
-        # self.profiles = ProfileManager()
+        try:
+            self.profiles = ProfileManager.readFile("profileManager.json")
+        except Exception as e:
+            print("[UI] Failed to read profileManager.json, using empty ProfileManager:", e)
+            self.profiles = ProfileManager()
+
         #self.tabs refer to the entire tab widget not just the tab bar
         self.tabs = self.window.findChild(QTabWidget, "tabWidget")
         self.tabs.setTabsClosable(True)
@@ -128,6 +131,8 @@ class MainWindow(QWidget):
         
         self.new_gesture_button = self.window.findChild(QPushButton, "addition_button")
         self.new_gesture_button.clicked.connect(self.new_gesture_dialog)
+        self.tabs.tabBarDoubleClicked.connect(self.tab_rename)
+        self.tabs.currentChanged.connect(self.on_tab_changed)
         
         base_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.abspath(os.path.join(base_dir, ".."))
@@ -149,7 +154,7 @@ class MainWindow(QWidget):
         
         json_files = self.PARENT_DIR.glob("profile_*.json")
         index = 1
-        profiles = ProfileManager()
+        profiles = self.profiles
         trash_path = os.path.join(RESOURCE_DIR, "resource", "Recycle-Bin-2--Streamline-Core.png")
         for files in json_files:
             name = files.stem.replace("profile_", "", 1)
@@ -160,7 +165,7 @@ class MainWindow(QWidget):
             if scroll.property("individual_sub_bar_container") is True:
                 current_scroll_content = scroll.widget()
                 current_scroll_layout = current_scroll_content.layout()
-                current_profile = profiles.loadProfile(name)
+                current_profile = self.profiles.loadProfile(name)
                 if current_profile is None:
                     print("[UI] Profile not found / failed to load.")
                     return
@@ -181,11 +186,13 @@ class MainWindow(QWidget):
         except Exception:
             self._gesturelist_last_mtime = None
 
+        # Force backend to load active profile on startup
+        self.on_tab_changed(self.tabs.currentIndex())
+
+
         self._gesturelist_timer = QTimer(self)
         self._gesturelist_timer.timeout.connect(self._tick_gesturelist_refresh)
         self._gesturelist_timer.start(500)
-
-
 
 
     # main command sender
@@ -203,6 +210,55 @@ class MainWindow(QWidget):
         except Exception as e:
             return f"ERR: {e}"
         
+    def tab_rename(self, index):
+        text, ok = QInputDialog.getText(
+            self,
+            "Rename Tab",
+            "Enter new name:"
+        )
+
+        if not ok or not text:
+            return
+
+        current_name = self.tabs.tabText(index)
+
+        # sanitize filename + profile ID
+        new_name = text.strip().replace(" ", "_")
+
+        if not new_name:
+            QMessageBox.warning(self, "Invalid name", "Profile name cannot be empty.")
+            return
+
+        # Optional: prevent renaming to the same name
+        if new_name == current_name:
+            return
+
+        # Rename JSON file + update profileManager.json
+        success = self.profiles.renameProfile(current_name, new_name)
+
+        if not success:
+            QMessageBox.warning(self, "Rename failed", "Could not rename profile.")
+            return
+
+        # Update tab label
+        self.tabs.setTabText(index, new_name)
+        self.on_tab_changed(index)
+
+
+    def on_tab_changed(self, index: int):
+        # Ignore the "+" tab
+        if self.tabs.tabBar().tabData(index) == "add_tab_button":
+            return
+
+        profile_id = (self.tabs.tabText(index) or "").strip()
+        if not profile_id:
+            return
+
+        resp = self.send_cmd(f"SET_PROFILE {profile_id}")
+        print("[UI] SET_PROFILE", profile_id, "->", resp)
+
+
+
     #function for the new tab button
     def new_tab_button(self, index):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -296,30 +352,49 @@ class MainWindow(QWidget):
         if self.tabs.tabBar().tabData(index) == "add_tab_button":
             return
 
+        profile_name = self.tabs.tabText(index)
+
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self,
+            "Delete Profile",
+            f"Delete profile '{profile_name}'?\nThis will permanently delete its JSON file.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply != QMessageBox.Yes:
+            return
+
+        # Delete JSON file + update profileManager.json
+        success = self.profiles.deleteProfile(profile_name)
+        if not success:
+            QMessageBox.warning(
+                self,
+                "Delete failed",
+                f"Failed to delete profile '{profile_name}'."
+            )
+            return
+
+        # --- UI tab removal (existing logic) ---
         current = self.tabs.currentIndex()
-
-        # Decide where to go AFTER closing (only if user closed the active tab)
         next_index = None
-        if index == current:
-            # Prefer the tab to the left
-            next_index = index - 1
 
-            # Safety: don't land on "+" tab
+        if index == current:
+            next_index = index - 1
             if self.tabs.tabBar().tabData(next_index) == "add_tab_button":
                 next_index = max(0, next_index - 1)
 
-        # Remove the tab
         self.tabs.removeTab(index)
 
-        # Update "+" tab index (it should always be the last)
         self.last_tab_index = self.tabs.count() - 1
 
-        # Switch to the decided tab
         if next_index is not None:
-            # After removal, indices shift if you removed a tab before next_index
             if index < next_index:
                 next_index -= 1
             self.tabs.setCurrentIndex(max(0, min(next_index, self.tabs.count() - 2)))
+            self.on_tab_changed(self.tabs.currentIndex())
+
+
 
     def _clear_layout(self, layout):
         while layout.count():

@@ -29,18 +29,28 @@ class ProfileManager:
         with open(fullpath, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)
 
-    def deleteProfile(self, profileName):
-        if profileName in self._profileNames:
-            profile = self.loadProfile(profileName)
-            if profile:
-                profile.deleteSelf()
-            self._profileNames.remove(profileName)
-            self.writeFile("profileManager.json")
-            print(f"[OK] Profile '{profileName}' deleted.")
-            return True
-        else:
-            print(f"[Warning] Profile '{profileName}' not found!")
+    def deleteProfile(self, profile_name: str) -> bool:
+        filename = f"profile_{profile_name}.json"
+        path = self._path(filename)
+
+        if not os.path.exists(path):
+            print(f"[WARN] Profile file not found: {path}")
             return False
+
+        try:
+            os.remove(path)
+        except Exception as e:
+            print("[ERROR] Failed to delete profile file:", e)
+            return False
+
+        # Remove from profile list if present
+        if profile_name in self._profileNames:
+            self._profileNames.remove(profile_name)
+            self.writeFile("profileManager.json")
+
+        print(f"[OK] Deleted profile '{profile_name}'")
+        return True
+
 
     def addProfile(self, profileName):
         if profileName in self._profileNames:
@@ -56,32 +66,41 @@ class ProfileManager:
         return False
 
     def renameProfile(self, oldName, newName):
-        if oldName not in self._profileNames:
-            print(f"[Error] Profile '{oldName}' does not exist!")
-            return True
-        if newName in self._profileNames:
-            print(f"[Error] Profile '{newName}' already exists!")
-            return False
-
         old_filename = f"profile_{oldName}.json"
         new_filename = f"profile_{newName}.json"
 
         old_path = self._path(old_filename)
         new_path = self._path(new_filename)
 
+        # If the new file already exists, abort
+        if os.path.exists(new_path):
+            print(f"[Error] File '{new_path}' already exists!")
+            return False
+
+        # If old file doesn't exist, abort
         if not os.path.exists(old_path):
             print(f"[Error] File '{old_path}' does not exist!")
-            return
+            return False
+
+        # If list is out of sync, don't block rename
+        if oldName not in self._profileNames:
+            print(f"[Warn] '{oldName}' not in profileManager.json list. Renaming file anyway.")
 
         profile = self.loadProfile(oldName)
         profile._Profile_ID = newName
         profile.writeFile(new_path)
         os.remove(old_path)
 
-        self._profileNames.remove(oldName)
-        self._profileNames.append(newName)
+        # Update list safely
+        if oldName in self._profileNames:
+            self._profileNames.remove(oldName)
+        if newName not in self._profileNames:
+            self._profileNames.append(newName)
+
         self.writeFile("profileManager.json")
         print(f"[OK] Profile renamed from '{oldName}' to '{newName}'.")
+        return True
+
 
     def getProfileList(self):
         return self._profileNames
@@ -89,7 +108,6 @@ class ProfileManager:
     def loadProfile(self, profileName):
         filename = f"profile_{profileName}.json"
         fullpath = self._path(filename)
-        print("[DEBUG] loadProfile() fullpath =", fullpath)  # <--- add this
         if not os.path.exists(fullpath):
             print(f"[Error] File '{fullpath}' does not exist!")
             return None
