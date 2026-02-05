@@ -94,11 +94,13 @@ class ProfileManager:
             if not os.path.exists(fullpath):
                 print(f"[Error] File '{fullpath}' does not exist!")
                 return None
+            
+            return Profile.readFile(fullpath)
         else:
             filename = f"{profileName}.json"
             fullpath = self._path(filename)
             
-        return Profile.readFile(fullpath)
+            return Profile.readFile(fullpath)
 
     def getProfile(self, profileName):
         if profileName in self._profileNames:
