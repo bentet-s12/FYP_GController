@@ -49,9 +49,9 @@ class Profile:
         
         filename = self._abs(filename)
 
-            data = {
-                "Profile_ID": self._Profile_ID,
-                "Actions": [action.toDict() for action in self._ActionList]
+        data = {
+            "Profile_ID": self._Profile_ID,
+            "Actions": [action.toDict() for action in self._ActionList]
             }
 
             with open(filename, "w", encoding="utf-8") as f:
