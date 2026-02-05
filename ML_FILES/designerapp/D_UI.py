@@ -56,7 +56,7 @@ class MainWindow(QWidget):
             raise RuntimeError(loader.errorString())
         
         
-        # self.profiles = ProfileManager()
+        self.profiles = ProfileManager().readFile("profileManager.json")
         #self.tabs refer to the entire tab widget not just the tab bar
         self.tabs = self.window.findChild(QTabWidget, "tabWidget")
         self.tabs.setTabsClosable(True)
@@ -151,16 +151,17 @@ class MainWindow(QWidget):
         
         json_files = self.PARENT_DIR.glob("profile_*.json")
         index = 1
-        profiles = ProfileManager()
         
         default_file = ("Default.json")
         default_path = self.PARENT_DIR / default_file
         if (default_path.exists()):
-            default_profile = profiles.loadProfile("Default")
+            print ("T")
+            default_profile = self.profiles.loadProfile("Default")
             action_list = default_profile.getActionList() or []
             for act in action_list:
                 self.build_action_row(self.scroll_layout, profile_id= "Default", act=act)
             else:
+                print ("F")
                 file_name = "Default"
                 path = self.PARENT_DIR / file_name
                 try:
@@ -178,7 +179,7 @@ class MainWindow(QWidget):
             if scroll.property("individual_sub_bar_container") is True:
                 current_scroll_content = scroll.widget()
                 current_scroll_layout = current_scroll_content.layout()
-                current_profile = profiles.loadProfile(name)
+                current_profile = self.profiles.loadProfile(name)
                 if current_profile is None:
                     print("[UI] Profile not found / failed to load.")
                     return
@@ -222,19 +223,17 @@ class MainWindow(QWidget):
             return f"ERR: {e}"
         
     def tab_rename(self, index):
-        PM = ProfileManager()
         text, ok = QInputDialog.getText(
         self,
         "Rename Tab",
         "Enter new name:"
         )
+        print (self.tabs.tabText(index))
         if ok and text:
             current_name = self.tabs.tabText(index)
+            print (current_name)
+            self.profiles.renameProfile(current_name, text)
             self.tabs.setTabText(index, text)
-            PM.renameProfile(current_name, text)
-            old_path = self.PARENT_DIR / f"profile_{current_name}.json"
-            new_path = self.PARENT_DIR / f"profile_{text}.json"
-            old_path.rename(new_path)
     
     #function for the new tab button
     def new_tab_button(self, index):
@@ -721,7 +720,7 @@ class MainWindow(QWidget):
 
     def save_action_edit(self, profile_id, action_name, new_gname, new_key, new_input_type, new_name=None):
         # profile_<id>.json is beside ProfileManager.py, so use ProfileManager's base_dir for correct pathing
-        profiles = ProfileManager()
+
         base_dir = os.path.dirname(os.path.abspath(__import__("ProfileManager").__file__))
         profile_path = os.path.join(base_dir, f"profile_{profile_id}.json")
 
