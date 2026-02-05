@@ -97,7 +97,8 @@ class ProfileManager:
         if not os.path.exists(fullpath):
             print(f"[Error] File '{fullpath}' does not exist!")
             return None
-        
+
+        print (Profile.readFile(fullpath, base_dir=self._base_dir).getProfileID())
         return Profile.readFile(fullpath, base_dir=self._base_dir)
 
     def getProfile(self, profileName):
