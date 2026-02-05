@@ -19,6 +19,10 @@ class Profile:
     def _abs(self, filename: str) -> str:
         # If already absolute, keep it; else join base_dir
         return filename if os.path.isabs(filename) else os.path.join(self._base_dir, filename)
+    
+    def _path(self, filename: str) -> str:
+        # Put all manager/profile json files next to ProfileManager.py
+        return os.path.join(self._base_dir, filename)
 
     @staticmethod
     def readFile(filename, base_dir=None):
@@ -39,7 +43,7 @@ class Profile:
 
         return profile
 
-   def writeFile(self, filename=None):
+    def writeFile(self, filename=None):
         if filename is None:
             # LOGIC: Default stays default.json, others get profile_ prefix
             if self._Profile_ID == "Default":
@@ -143,7 +147,7 @@ class Profile:
                 return True
         print(f"[Error] Gesture '{gesture_name}' not found in actions.")
         return False
-
+    
 
 
 if __name__ == "__main__":

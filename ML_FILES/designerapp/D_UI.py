@@ -176,7 +176,10 @@ class MainWindow(QWidget):
             #     print(f"[Error] Failed to save gestures: {e}") 
         
         for files in json_files:
-            name = files.stem.replace("profile_", "", 1)
+            if (files.stem != "Default.Json"):
+                name = files.stem.replace("profile", "", 1)
+            else:
+                name = "Default"
             self.new_tab_button(index)
             self.tabs.setTabText(index, name)
             tab = self.tabs.widget(index)
@@ -184,18 +187,22 @@ class MainWindow(QWidget):
             if scroll.property("individual_sub_bar_container") is True:
                 current_scroll_content = scroll.widget()
                 current_scroll_layout = current_scroll_content.layout()
-                if (os.path.exists(self._path(name))):
-                    current_profile = self.profiles.loadProfile(name)
-                    
+                #fullpath = self.profiles._path(name+".json")
+
+                #if os.path.exists(fullpath):
+                current_profile = self.profiles.loadProfile(name)
+
                 if current_profile is None:
                     print("[UI] Profile not found / failed to load.")
                     return
 
                 current_action_list = current_profile.getActionList() or []
-                
                 for act in current_action_list:
                     self.build_action_row(current_scroll_layout, profile_id=name, act=act)
-                
+                #else:
+                    #print("can't detect this shit pmo")
+
+
             index += 1
 
         # --- GestureList.json watcher (same polling refresh logic as library dialog) ---
@@ -529,8 +536,6 @@ class MainWindow(QWidget):
                             # if deleting selected
                             if selected["name"] == name:
                                 set_selected(None)
-                                resp = self.send_cmd(f"DELETE_GESTURE {name}")
-                                print("[UI] DELETE_GESTURE resp:", resp)
                             rebuild_rows()
                     return _
 

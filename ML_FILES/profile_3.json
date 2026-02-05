@@ -6,34 +6,34 @@
             "G_name": "up",
             "key_pressed": "w",
             "input_type": "Hold",
-            "key_type": null
+            "key_type": "Keyboard"
         },
         {
             "name": "reverse",
             "G_name": "down",
             "key_pressed": "s",
             "input_type": "Hold",
-            "key_type": null
+            "key_type": "Keyboard"
         },
         {
             "name": "turn_left",
             "G_name": "left",
             "key_pressed": "a",
             "input_type": "Hold",
-            "key_type": null
+            "key_type": "Keyboard"
         },
         {
             "name": "turn_right",
             "G_name": "right",
             "key_pressed": "d",
             "input_type": "Hold",
-            "key_type": null
+            "key_type": "Keyboard"
         },
         {
             "name": "neutral",
             "G_name": "null",
             "key_pressed": null,
-            "input_type": "Click",
+            "input_type": null,
             "key_type": null
         }
     ]

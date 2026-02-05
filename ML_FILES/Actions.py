@@ -145,6 +145,7 @@ class Actions:
 
      # ----- MAIN ACTION -----
     def useAction(self, token=None):
+
         if getattr(self, "_key_pressed", None) is None:
             return
 

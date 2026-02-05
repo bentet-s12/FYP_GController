@@ -28,7 +28,7 @@ DATA_DIR = os.path.join(SCRIPT_DIR, "data", "landmarkVectors")
 MODEL_TASK_PATH = os.path.join(SCRIPT_DIR, "data", "models", "hand_landmarker.task")
 
 # IMPORTANT: this must match your real file name
-PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "profile_1.json")
+PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "Default.json")
 GESTURELIST_JSON_PATH = os.path.join(SCRIPT_DIR, "GestureList.json")
 STRICT_GESTURELIST = True  # if True: ignore profile mappings whose gesture is not in GestureList.json
 
@@ -383,6 +383,7 @@ def load_actions_from_profile_json(profile_path: str):
 
     gesture_list = load_gesture_list(GESTURELIST_JSON_PATH)
     gesture_set = set(gesture_list)
+
     if not os.path.exists(profile_path):
         print(f"[PROFILE] Missing: {profile_path}")
         return action_map
@@ -406,6 +407,7 @@ def load_actions_from_profile_json(profile_path: str):
                 continue
 
             if STRICT_GESTURELIST and gesture_set and (gesture not in gesture_set):
+                print(f"[PROFILE] Skip mapping: gesture '{gesture}' not in GestureList.json")
                 continue
 
             key = a.get("key_pressed")
@@ -431,47 +433,17 @@ def load_actions_from_profile_json(profile_path: str):
                     key_type = "Mouse"
                 elif kt == "keyboard":
                     key_type = "Keyboard"
-            
-            key_type = a.get("key_type")
-            # DEFAULT if missing
-            if not isinstance(key_type, str) or not key_type.strip():
-                key_type = "Keyboard"
-            else:
-                kt = key_type.strip().lower()
-                if kt == "mouse":
-                    key_type = "Mouse"
-                elif kt == "keyboard":
-                    key_type = "Keyboard"
 
-            # Build mapping that can be matched by BOTH:
-            # - gesture binding (G_name)  e.g. "up", "down"
-            # - action name (name)        e.g. "accelerate", "reverse"
-
-            action_name = a.get("name")
-            action_name = action_name.strip() if isinstance(action_name, str) else None
-
-            # gesture variable already exists above (from G_name), but normalize "null"
-            if gesture in ("", "null", "None"):
-                gesture = None
-            if action_name in ("", "null", "None"):
-                action_name = None
-
+            # IMPORTANT: Actions.__init__(name, G_name, key_pressed, input_type, key_type)
             action_obj = Actions(
-                name=action_name or (gesture or "unnamed"),
+                name=gesture,
                 G_name=gesture,
                 key_pressed=key,
                 input_type=input_type,
                 key_type=key_type
             )
 
-            # Store by gesture binding
-            if gesture:
-                action_map[gesture] = action_obj
-
-            # Store by action name too
-            if action_name:
-                action_map[action_name] = action_obj
-
+            action_map[gesture] = action_obj
 
         print(f"[PROFILE] Loaded {len(action_map)} mappings from {os.path.basename(profile_path)}: {list(action_map.keys())}")
         return action_map
@@ -670,12 +642,12 @@ class ClickTesterGUI:
                 )
 
         elif k == "q":
-            # exit to background (do NOT kill backend)
-            self.app._exit_collect_to_background()
+            # quit safely
+            self.app.running = False
             try:
-                self.root.after(0, self.hide)
+                self.root.after(50, self.root.destroy)
             except Exception:
-                pass
+                self.root.destroy()
 
     def hide(self):
         try:
@@ -820,13 +792,7 @@ class CommandServer(threading.Thread):
                             else:
                                 self.app._collect_req_name = parts[1].strip()
                                 conn.sendall(b"OK\n")
-                        elif data.startswith("DELETE_GESTURE"):
-                            parts = data.split(maxsplit=1)
-                            if len(parts) < 2 or not parts[1].strip():
-                                conn.sendall(b"ERR Empty gesture name\n")
-                            else:
-                                self.app._delete_req_name = parts[1].strip()
-                                conn.sendall(b"OK\n")
+
                         else:
                             conn.sendall(b"UNKNOWN\n")
 
@@ -929,9 +895,6 @@ class GestureControllerApp:
         self._last_tk_pump = 0.0
         self._tk_pump_interval = 1.0 / 60.0   # 60 Hz (use 1/30 if you want)
 
-        self._delete_req_name = None
-
-
         if self.enable_camera:
             self._init_camera_and_models()
             self._init_monitor()
@@ -1008,59 +971,6 @@ class GestureControllerApp:
                 self.screen_w = screen_w
                 self.screen_h = screen_h
 
-    def _hold_token(self, act):
-        kt = act.getKeyType() or "Keyboard"
-        key = act.getKeyPressed()
-        return (kt, key)
-
-    def _hold_down(self, token):
-        kt, key = token
-        if not key:
-            return
-
-        # init store
-        if not hasattr(self, "_held_counts"):
-            self._held_counts = {}
-
-        c = self._held_counts.get(token, 0) + 1
-        self._held_counts[token] = c
-
-        if c == 1:
-            # first holder -> press down
-            try:
-                if kt == "Mouse":
-                    import pydirectinput
-                    pydirectinput.mouseDown(button=key)
-                else:
-                    import pydirectinput
-                    pydirectinput.keyDown(key)
-            except Exception as e:
-                print("[HOLD] down failed:", token, e)
-
-    def _hold_up(self, token):
-        kt, key = token
-        if not key or not hasattr(self, "_held_counts"):
-            return
-
-        c = self._held_counts.get(token, 0)
-        if c <= 0:
-            return
-
-        c -= 1
-        if c == 0:
-            # last holder -> release
-            try:
-                if kt == "Mouse":
-                    import pydirectinput
-                    pydirectinput.mouseUp(button=key)
-                else:
-                    import pydirectinput
-                    pydirectinput.keyUp(key)
-            except Exception as e:
-                print("[HOLD] up failed:", token, e)
-            self._held_counts.pop(token, None)
-        else:
-            self._held_counts[token] = c
 
     def reload_profile_actions(self):
         self.action_map = load_actions_from_profile_json(PROFILE_JSON_PATH)
@@ -1247,65 +1157,6 @@ class GestureControllerApp:
 
             self.collect_locked_label = None
 
-    def _add_null_gesture_sample(self):
-        """
-        Adds a single "null" gesture sample = 42D zero vector into the dataset,
-        ensures GestureList.json contains "null", then reloads the classifier.
-        """
-        null_name = "null"
-
-        # 1) Ensure GestureList has "null"
-        try:
-            gestures = load_gesture_list(GESTURELIST_JSON_PATH)
-            if null_name not in gestures:
-                gestures.append(null_name)
-                with open(GESTURELIST_JSON_PATH, "w", encoding="utf-8") as f:
-                    json.dump(gestures, f, indent=4)
-                print("[NULL] Added 'null' to GestureList.json")
-        except Exception as e:
-            print("[NULL] Failed updating GestureList.json:", e)
-
-        # 2) Append a zero-vector sample to X/y (and update class_names)
-        X_path = os.path.join(DATA_DIR, "X.npy")
-        y_path = os.path.join(DATA_DIR, "y.npy")
-        c_path = os.path.join(DATA_DIR, "class_names.npy")
-
-        vec = np.zeros((42,), dtype=np.float32)
-
-        try:
-            if os.path.exists(X_path) and os.path.exists(y_path) and os.path.exists(c_path):
-                X = np.load(X_path, allow_pickle=True)
-                y = np.load(y_path, allow_pickle=True)
-
-                # force y to strings (matches your loader behavior)
-                y = np.array([str(v) for v in y], dtype=object)
-
-                # append
-                X2 = np.vstack([X, vec.reshape(1, -1)]) if X.ndim == 2 else np.array(list(X) + [vec], dtype=object)
-                y2 = np.append(y, null_name)
-
-                class_names2 = sorted(set(list(y2)))
-
-                np.save(X_path, X2)
-                np.save(y_path, y2)
-                np.save(c_path, np.array(class_names2, dtype=object))
-
-                print(f"[NULL] Appended null sample. Total samples: {len(y)} -> {len(y2)}")
-            else:
-                print("[NULL] Dataset files missing (X/y/class_names). Cannot append null sample.")
-                return
-
-        except Exception as e:
-            print("[NULL] Failed appending null sample:", e)
-            return
-
-        # 3) Reload classifier so it immediately recognizes "null"
-        try:
-            if self.classifier:
-                self.classifier.load_dataset()
-                print("[NULL] Classifier reloaded.")
-        except Exception as e:
-            print("[NULL] Classifier reload failed:", e)
 
 
     def _draw_collect_overlay(self, frame):
@@ -1390,71 +1241,59 @@ class GestureControllerApp:
     # ---------- keyboard helpers ----------
 
     def _process_action_for_hand(self, hand_label: str, current_gesture: str):
-        prev_g = self.prev_gesture_by_hand.get(hand_label, "none")
-        prev_hold_token = self.prev_hold_action_by_hand.get(hand_label)  # now stores token tuple, not Actions
+        """
+        Execute mapped action for a given hand label ("Left"/"Right") based on current_gesture.
+        Supports simultaneous holds on both hands.
+        """
+        prev_gesture = self.prev_gesture_by_hand.get(hand_label, "none")
+        prev_hold = self.prev_hold_action_by_hand.get(hand_label)
 
-        act = self.action_map.get(current_gesture) if current_gesture and current_gesture != "none" else None
+        mapped_action_obj = self.action_map.get(current_gesture) if current_gesture != "none" else None
 
-        # MultiKB keyboard-only restriction
-        if self.hand_mode == "multi_keyboard" and self.MULTI_KEYBOARD_ONLY and act is not None:
-            if (act.getKeyType() or "Keyboard") != "Keyboard":
-                act = None
+        # Optional restriction: MultiKB should only drive keyboard actions
+        if self.hand_mode == "multi_keyboard" and self.MULTI_KEYBOARD_ONLY and mapped_action_obj is not None:
+            if mapped_action_obj.getKeyType() != "Keyboard":
+                mapped_action_obj = None
 
-        # If gesture changed or disappeared, release previous hold for THIS hand only
-        if prev_hold_token is not None:
-            # If no longer holding same gesture/action, release
-            if current_gesture == "none" or act is None:
-                self._hold_up(prev_hold_token)
-                prev_hold_token = None
-            else:
-                # if the new hold target differs from what we were holding, release old first
-                new_token = self._hold_token(act)
-                if new_token != prev_hold_token:
-                    self._hold_up(prev_hold_token)
-                    prev_hold_token = None
+        # Stop hold if gesture changes/disappears/unmapped
+        if prev_hold is not None:
+            if current_gesture == "none" or mapped_action_obj is None or current_gesture != prev_hold.getName():
+                print("[STOP]", hand_label, "cur=", current_gesture,
+                "prev_hold_name=", prev_hold.getName(),
+                "mapped=", None if mapped_action_obj is None else mapped_action_obj.getInputType(), flush=True)
+                prev_hold.stopHold()
+                prev_hold = None
 
         fired_text = "NO"
         mapped_text = "None"
 
-        if act is not None:
-            input_type = act.getInputType()
-            key = act.getKeyPressed()
-
-            # normalize input_type
-            if isinstance(input_type, str):
-                t = input_type.strip().lower().replace(" ", "_")
-                if t == "click":
-                    input_type = "Click"
-                elif t == "hold":
-                    input_type = "Hold"
-                elif t in ("d_click", "doubleclick", "double_click"):
-                    input_type = "D_Click"
-
+        if mapped_action_obj is not None:
+            input_type = mapped_action_obj.getInputType()
+            key = mapped_action_obj.getKeyPressed()
             mapped_text = f"{current_gesture} -> {key} ({input_type})"
 
-            # edge trigger for click types
-            is_new = (current_gesture != prev_g)
-
+            # CLICK / DOUBLE CLICK fires once on transition
             if input_type in ("Click", "D_Click"):
-                if is_new:
-                    act.useAction(current_gesture)
-                    fired_text = "YES"
+                if current_gesture != prev_gesture:
+                    mapped_action_obj.useAction(mapped_action_obj.getName())
+                    fired_text = "YES" if input_type == "Click" else "D_CLICK"
 
+            # HOLD repeats safely
             elif input_type == "Hold":
-                if prev_hold_token is None:
-                    token = self._hold_token(act)
-                    self._hold_down(token)
-                    prev_hold_token = token
+                if prev_hold is None:
+                    print("###HOLD_START###", hand_label, current_gesture, key, flush=True)
+
+                mapped_action_obj.useAction(mapped_action_obj.getName())
+                prev_hold = mapped_action_obj
                 fired_text = "HOLD"
 
-        # save state
+
+
+        # Save state back
         self.prev_gesture_by_hand[hand_label] = current_gesture
-        self.prev_hold_action_by_hand[hand_label] = prev_hold_token
+        self.prev_hold_action_by_hand[hand_label] = prev_hold
 
         return mapped_text, fired_text
-
-
-
     
     def _apply_camera_adjustments(self, frame_bgr):
         """
@@ -1650,67 +1489,6 @@ class GestureControllerApp:
             print("[GUI] thread crashed:", e, flush=True)
             self.gui = None
 
-    def _delete_gesture_and_vectors(self, gesture_name: str):
-        gesture_name = (gesture_name or "").strip()
-        if not gesture_name:
-            print("[DELETE] empty name")
-            return
-
-        print("[DELETE] Removing gesture:", gesture_name)
-
-        # 1) Remove from GestureList.json
-        gestures = load_gesture_list(GESTURELIST_JSON_PATH)
-        gestures2 = [g for g in gestures if g != gesture_name]
-        try:
-            with open(GESTURELIST_JSON_PATH, "w", encoding="utf-8") as f:
-                json.dump(gestures2, f, indent=4)
-        except Exception as e:
-            print("[DELETE] Failed writing GestureList:", e)
-
-        # 2) Remove from dataset files (X.npy / y.npy / class_names.npy)
-        X_path = os.path.join(DATA_DIR, "X.npy")
-        y_path = os.path.join(DATA_DIR, "y.npy")
-        c_path = os.path.join(DATA_DIR, "class_names.npy")
-
-        if not (os.path.exists(X_path) and os.path.exists(y_path) and os.path.exists(c_path)):
-            print("[DELETE] Dataset files missing; nothing to filter.")
-        else:
-            try:
-                X = np.load(X_path, allow_pickle=True)
-                y = np.load(y_path, allow_pickle=True)
-
-                # normalize y to strings like your loader does
-                y = np.array([str(v) for v in y], dtype=object)
-
-                keep = np.array([lbl != gesture_name for lbl in y], dtype=bool)
-                X2 = X[keep]
-                y2 = y[keep]
-
-                # rebuild class_names from remaining y
-                class_names2 = sorted(set(list(y2)))
-
-                np.save(X_path, X2)
-                np.save(y_path, y2)
-                np.save(c_path, np.array(class_names2, dtype=object))
-
-                print(f"[DELETE] Filtered dataset: {len(X)} -> {len(X2)} samples; classes now={class_names2}")
-
-            except Exception as e:
-                print("[DELETE] Failed filtering dataset:", e)
-
-        # 3) Also delete any per-gesture folder if your pipeline created it
-        vec_folder = os.path.join(DATA_DIR, gesture_name)
-        if os.path.isdir(vec_folder):
-            shutil.rmtree(vec_folder, ignore_errors=True)
-            print("[DELETE] Removed folder:", vec_folder)
-
-        # 4) Reload classifier so deletion takes effect immediately
-        try:
-            if self.classifier:
-                self.classifier.load_dataset()
-        except Exception as e:
-            print("[DELETE] Reload classifier failed:", e)
-
     # ---------- main loop ----------
 
     def run(self):
@@ -1790,8 +1568,10 @@ class GestureControllerApp:
                     # --- Base prediction (no mirroring) ---
                     feat = landmarks_to_feature_vector(hand_lm, mirror=False)
                     pred1, conf1 = self.classifier.predict(feat)
+
                     pred = pred1
                     conf = conf1
+
                     # --- Mirror-invariant inference ONLY for non-directional gestures ---
                     if pred1 not in DIRECTIONAL_GESTURES:
                         feat_m = landmarks_to_feature_vector(hand_lm, mirror=True)
@@ -1906,9 +1686,9 @@ class GestureControllerApp:
 
             for lbl in ["Left", "Right"]:
                 if lbl not in seen_labels:
-                    prev_hold_token = self.prev_hold_action_by_hand.get(lbl)
-                    if prev_hold_token is not None:
-                        self._hold_up(prev_hold_token)
+                    prev_hold = self.prev_hold_action_by_hand.get(lbl)
+                    if prev_hold is not None:
+                        prev_hold.stopHold()
                     self.prev_hold_action_by_hand[lbl] = None
                     self.prev_gesture_by_hand[lbl] = "none"
 
@@ -2051,23 +1831,11 @@ class GestureControllerApp:
                         print(f"[COLLECT] Target switched to {self.collect_target_one}. Reset. Press SPACE.")
                         handled = True
 
-                elif k == ord('n'):
-                    # Add a "null" gesture sample: a 42D zero vector (no hand vectors)
-                    self._add_null_gesture_sample()
-                    handled = True
-
-
-            if self._delete_req_name is not None:
-                g = self._delete_req_name
-                self._delete_req_name = None
-                self._delete_gesture_and_vectors(g)
-
 
             # ===== 2) Normal runtime shortcuts (always available) =====
             if not handled:
                 if k == ord('q'):
-                    self._exit_collect_to_background()
-                    handled = True
+                    self.running = False
 
                 elif k == ord('r'):
                     self.reload_profile_actions()
