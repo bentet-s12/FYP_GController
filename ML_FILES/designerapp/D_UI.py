@@ -171,60 +171,59 @@ class MainWindow(QWidget):
 
         tab = self.tabs.widget(default_idx)
         scroll = tab.findChild(QScrollArea)
+
         if scroll and scroll.property("individual_sub_bar_container") is True:
             layout = scroll.widget().layout()
-            self._clear_layout(layout)
 
-            data = self._load_profile_json(default_profile_id)
-            actions = data.get("Actions", [])
-            if not isinstance(actions, list):
-                actions = []
-
-            class _ActShim:
-                def __init__(self, d): self._d = d
-                def getGName(self): return self._d.get("G_name")
-                def getKeyPressed(self): return self._d.get("key_pressed")
-                def getInputType(self): return self._d.get("input_type")
-                def getName(self): return self._d.get("name")
-
-            for row in actions:
-                if isinstance(row, dict):
-                    self.build_action_row(layout, profile_id=default_profile_id, act=_ActShim(row))
-
-        for files in json_files:
-            if files.name == "Default.json":
-                profile_id = "Default"
+            path = self._profile_path(default_profile_id)
+            if not os.path.exists(path):
+                print(f"[UI] Default profile missing -> NOT clearing UI: {path}")
             else:
-                profile_id = files.stem.replace("profile_", "", 1)
+                data = self._load_profile_json(default_profile_id)
 
-            tab_index = self._add_profile_tab(profile_id)
+                actions = data.get("Actions", None)
+                if not isinstance(actions, list):
+                    actions = []
 
-            tab = self.tabs.widget(tab_index)
-            scroll = tab.findChild(QScrollArea)
-            if scroll and scroll.property("individual_sub_bar_container") is True:
-                layout = scroll.widget().layout()
-                current_profile = self.profiles.loadProfile(profile_id)
-                if current_profile is not None:
-                    for act in (current_profile.getActionList() or []):
-                        self.build_action_row(layout, profile_id=profile_id, act=act)
-                else:
-                    # ProfileManager couldn't load it (likely Default.json). Load raw JSON and build rows.
-                    data = self._load_profile_json(profile_id)
-                    actions = data.get("Actions", [])
-                    if not isinstance(actions, list):
-                        actions = []
+                print(f"[UI] Loaded Default from {path}, actions={len(actions)}")
 
-                    class _ActShim:
-                        def __init__(self, d): self._d = d
-                        def getGName(self): return self._d.get("G_name")
-                        def getKeyPressed(self): return self._d.get("key_pressed")
-                        def getInputType(self): return self._d.get("input_type")
-                        def getName(self): return self._d.get("name")
+                # ONLY clear if we successfully loaded Default.json
+                self._clear_layout(layout)
 
-                    for row in actions:
-                        if isinstance(row, dict):
-                            self.build_action_row(layout, profile_id=profile_id, act=_ActShim(row))
+                class _ActShim:
+                    def __init__(self, d): self._d = d
+                    def getGName(self): return self._d.get("G_name")
+                    def getKeyPressed(self): return self._d.get("key_pressed")
+                    def getInputType(self): return self._d.get("input_type")
+                    def getName(self): return self._d.get("name")
 
+                for row in actions:
+                    if isinstance(row, dict):
+                        self.build_action_row(
+                            layout,
+                            profile_id=default_profile_id,
+                            act=_ActShim(row)
+                        )
+            
+                # ===== Load other profile_*.json into NEW tabs =====
+                for f in json_files:
+                    profile_id = f.stem.replace("profile_", "", 1)
+
+                    # skip if it would be Default (just in case you ever have profile_Default.json)
+                    if profile_id.lower() == "default":
+                        continue
+
+                    tab_index = self._add_profile_tab(profile_id)
+
+                    # populate actions into that tab
+                    tab = self.tabs.widget(tab_index)
+                    scroll = tab.findChild(QScrollArea)
+                    if scroll and scroll.property("individual_sub_bar_container") is True:
+                        layout = scroll.widget().layout()
+                        current_profile = self.profiles.loadProfile(profile_id)
+                        if current_profile is not None:
+                            for act in (current_profile.getActionList() or []):
+                                self.build_action_row(layout, profile_id=profile_id, act=act)
 
 
 
@@ -249,7 +248,6 @@ class MainWindow(QWidget):
                 continue
             if self.tabs.tabText(i).strip() == "Default":
                 self.tabs.setCurrentIndex(i)
-                self._on_tab_changed(i)   # tell backend too
                 break
 
         QTimer.singleShot(50, self._reload_active_tab_actions)
@@ -508,7 +506,7 @@ class MainWindow(QWidget):
         if self.tabs.tabBar().tabData(idx) == "add_tab_button":
             return
 
-        profile_id = self.tabs.tabText(idx).strip()
+        profile_id = self._profile_id_for_tab(idx)
         if not profile_id:
             return
 
@@ -528,15 +526,31 @@ class MainWindow(QWidget):
         # 1) clear UI rows
         self._clear_layout(layout)
 
-        # 2) rebuild from JSON via ProfileManager
-        current_profile = self.profiles.loadProfile(profile_id)
-        if current_profile is None:
-            print("[UI] reload tab: profile not found:", profile_id)
-            return
+        # 2) rebuild rows
+        if profile_id == "Default":
+            data = self._load_profile_json("Default")
+            actions = data.get("Actions", [])
+            if not isinstance(actions, list):
+                actions = []
 
-        current_action_list = current_profile.getActionList() or []
-        for act in current_action_list:
-            self.build_action_row(layout, profile_id=profile_id, act=act)
+            class _ActShim:
+                def __init__(self, d): self._d = d
+                def getGName(self): return self._d.get("G_name")
+                def getKeyPressed(self): return self._d.get("key_pressed")
+                def getInputType(self): return self._d.get("input_type")
+                def getName(self): return self._d.get("name")
+
+            for row in actions:
+                if isinstance(row, dict):
+                    self.build_action_row(layout, profile_id="Default", act=_ActShim(row))
+        else:
+            current_profile = self.profiles.loadProfile(profile_id)
+            if current_profile is None:
+                print("[UI] reload tab: profile not found:", profile_id)
+                return
+            for act in (current_profile.getActionList() or []):
+                self.build_action_row(layout, profile_id=profile_id, act=act)
+
 
         # 3) ensure backend uses latest mappings for this profile
         resp = self.send_cmd(f"SET_PROFILE {profile_id}")
@@ -867,6 +881,7 @@ class MainWindow(QWidget):
         super().resizeEvent(event)
 
     def _profile_path(self, profile_id: str) -> str:
+        # profiles live in ML_FILES (parent of designerapp)
         if profile_id == "Default":
             return str(self.PARENT_DIR / "Default.json")
         return str(self.PARENT_DIR / f"profile_{profile_id}.json")
@@ -944,12 +959,6 @@ class MainWindow(QWidget):
         profiles = ProfileManager()
         base_dir = os.path.dirname(os.path.abspath(__import__("ProfileManager").__file__))
         profile_path = self._profile_path(profile_id)
-
-        if not os.path.exists(profile_path):
-            print("[UI] save_action_edit: profile file missing:", profile_path)
-            return
-
-
 
         if not os.path.exists(profile_path):
             print("[UI] save_action_edit: profile file missing:", profile_path)
@@ -1363,6 +1372,7 @@ class MainWindow(QWidget):
                         cb.setCurrentIndex(0)
 
                     cb.blockSignals(was_blocked)
+
 
 
 

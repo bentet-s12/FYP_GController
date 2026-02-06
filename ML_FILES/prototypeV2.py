@@ -1071,26 +1071,47 @@ class GestureControllerApp:
             self._held_counts[token] = c
 
     def reload_profile_actions(self):
-        # ---- active profile (dynamic, not hardcoded) ----
-        self.active_profile_id = "1"
-        self.active_profile_path = os.path.join(SCRIPT_DIR, f"profile_{self.active_profile_id}.json")
+        path = getattr(self, "active_profile_path", None) or getattr(self, "current_profile_path", None) or PROFILE_JSON_PATH
+        print("[PROFILE] Reloading:", path, "exists=", os.path.exists(path), flush=True)
 
-        self.action_map = load_actions_from_profile_json(self.active_profile_path)
+        if not os.path.exists(path):
+            print("[PROFILE] Reload skipped (missing):", path, flush=True)
+            return
+
+        self.action_map = load_actions_from_profile_json(path)
 
     def set_active_profile(self, profile_id: str) -> bool:
         pid = (profile_id or "").strip()
         if not pid:
             return False
 
+        # Accept: "1", "profile_1", "profile_1.json", "Default", "Default.json"
+        if pid.lower() in ("default", "default.json"):
+            path = os.path.join(SCRIPT_DIR, "Default.json")
+
+        elif pid.lower().endswith(".json"):
+            # treat as direct filename under ML_FILES
+            path = os.path.join(SCRIPT_DIR, pid)
+
+        elif pid.startswith("profile_"):
+            path = os.path.join(SCRIPT_DIR, f"{pid}.json")
+
+        else:
+            path = os.path.join(SCRIPT_DIR, f"profile_{pid}.json")
+
+        print(f"[PROFILE] Switching to: {path} exists= {os.path.exists(path)}", flush=True)
+
+        # If missing, don't switch (keep previous mappings)
+        if not os.path.exists(path):
+            print(f"[PROFILE] Missing: {path} (keeping current profile)", flush=True)
+            return True
+
         self.active_profile_id = pid
-        self.active_profile_path = os.path.join(SCRIPT_DIR, f"profile_{pid}.json")
+        self.active_profile_path = path
+        self.current_profile_path = path
 
-        print("[PROFILE] Switching to:", self.active_profile_path,
-            "exists=", os.path.exists(self.active_profile_path), flush=True)
-
-        self.action_map = load_actions_from_profile_json(self.active_profile_path)
+        self.action_map = load_actions_from_profile_json(path)
         return True
-
 
 
     def request_collect_gesture(self, name: str):
@@ -1770,23 +1791,6 @@ class GestureControllerApp:
                 name = self._collect_req_name
                 self._collect_req_name = None
                 self._start_collect_mode(name)
-
-            if self._req_profile_id is not None:
-                pid = (self._req_profile_id or "").strip()
-                self._req_profile_id = None
-
-                # Accept: "1", "profile_1", "profile_1.json", "Default", "Default.json"
-                if pid.lower().endswith(".json"):
-                    new_path = os.path.join(SCRIPT_DIR, pid)
-                elif pid.startswith("profile_"):
-                    new_path = os.path.join(SCRIPT_DIR, f"{pid}.json")
-                elif pid.lower() == "default":
-                    new_path = os.path.join(SCRIPT_DIR, "Default.json")
-                else:
-                    new_path = os.path.join(SCRIPT_DIR, f"profile_{pid}.json")
-
-                print("[PROFILE] Switching to:", new_path, "exists=", os.path.exists(new_path), flush=True)
-                self.action_map = load_actions_from_profile_json(new_path)
 
 
             ret, frame_raw = self.cap.read()
