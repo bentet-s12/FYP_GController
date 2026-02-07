@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
     QStatusBar, QMessageBox, QLabel, QPushButton, 
     QLineEdit, QComboBox, QTabBar, QToolButton, QDialog, QScrollArea, 
-    QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox, QInputDialog
+    QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox, QInputDialog, QSlider, QCheckBox
 )
 from pathlib import Path
 from ProfileManager import ProfileManager
@@ -256,7 +256,260 @@ class MainWindow(QWidget):
         if idx == 0:
             return "Default"
         return self.tabs.tabText(idx).strip()
+    
+    def setting_dialog(self):
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        reload_path = os.path.join(BASE_DIR, "resource", "Synchronize-Warning--Streamline-Core.png")
+        brightness_path = os.path.join(BASE_DIR, "resource", "Brightness-1--Streamline-Core.png")
+        contrast_path = os.path.join(BASE_DIR, "resource", "Image-Saturation--Streamline-Core.png")
+        grey_scale_path = os.path.join(BASE_DIR, "resource", "Humidity-None--Streamline-Core.png")
+        instruction_path = os.path.join(BASE_DIR, "resource", "Chat-Bubble-Square-Question--Streamline-Core.png")
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Settings")
+        dialog.setFixedSize(500, 800)
+        dialog.setModal(True)
+        
+        top_frame = QFrame(dialog)
+        top_frame.setGeometry(0, 0, 500, 80)
+        top_frame.setStyleSheet("background-color: #030013;")
+        
+        label_title = QLabel("Settings", top_frame)
+        label_title.setGeometry(30, 20, 220, 40)
+        label_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = label_title.font()
+        f.setPointSize(20)
+        label_title.setFont(f)
+        
+        dialog_scroll = QScrollArea(dialog)
+        dialog_scroll.setGeometry(0, 80, 500, 720)
+        dialog_scroll.setStyleSheet("background: #3c384d; border: none;")
+        dialog_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
 
+        dialog_scroll_content = QWidget()
+        dialog_scroll.setWidget(dialog_scroll_content)
+        dialog_scroll_layout = QVBoxLayout(dialog_scroll_content)
+        dialog_scroll_layout.setAlignment(Qt.AlignTop)
+        dialog_scroll_layout.setContentsMargins(20, 30, 20, 10)
+        dialog_scroll_layout.setSpacing(20)
+        dialog_scroll.setWidgetResizable(True)
+        
+        hand_mode_setting = QWidget()
+        hand_mode_setting.setFixedHeight(80)
+        hand_mode_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(hand_mode_setting)
+        
+        hand_mode_title = QLabel("Hand mode:", hand_mode_setting)
+        hand_mode_title.setGeometry(20,20,230, 40)
+        hand_mode_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = hand_mode_title.font()
+        f.setPointSize(16)
+        hand_mode_title.setFont(f)
+        
+        hand_mode_options = QComboBox(hand_mode_setting)
+        hand_mode_options.setGeometry(320,20,110,40)
+        hand_mode_options.setStyleSheet("""QComboBox{color: #030013; background: #e0dde5; border-radius: 8px;} 
+                                            
+                                        """)
+        
+        hand_mode_options.addItems([
+            "Right pointer",
+            "Left pointer",
+            "Auto",
+            "MultiKB"
+        ])
+                
+        for i in range(hand_mode_options.count()):
+            hand_mode_options.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
+            
+        
+        mouse_mode_setting = QWidget()
+        mouse_mode_setting.setFixedHeight(80)
+        mouse_mode_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(mouse_mode_setting)
+        
+        mouse_mode_title = QLabel("Mouse mode:", mouse_mode_setting)
+        mouse_mode_title.setGeometry(20,20,230, 40)
+        mouse_mode_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = mouse_mode_title.font()
+        f.setPointSize(16)
+        mouse_mode_title.setFont(f)
+        
+        mouse_mode_options = QComboBox(mouse_mode_setting)
+        mouse_mode_options.setGeometry(320,20,110,40)
+        mouse_mode_options.setStyleSheet("""QComboBox{color: #030013; background: #e0dde5; border-radius: 8px;} 
+                                            
+                                        """)
+        
+        mouse_mode_options.addItems([
+            "Disabled",
+            "Camera",
+            "Cursor",
+        ])
+                
+        for i in range(mouse_mode_options.count()):
+            mouse_mode_options.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
+            
+        
+        hand_vectors_setting = QWidget()
+        hand_vectors_setting.setFixedHeight(80)
+        hand_vectors_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(hand_vectors_setting)
+        
+        hand_vectors_title = QLabel("Hand vectors:", hand_vectors_setting)
+        hand_vectors_title.setGeometry(20,20,230, 40)
+        hand_vectors_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = hand_vectors_title.font()
+        f.setPointSize(16)
+        hand_vectors_title.setFont(f)
+        
+        hand_vectors_options = QComboBox(hand_vectors_setting)
+        hand_vectors_options.setGeometry(320,20,110,40)
+        hand_vectors_options.setStyleSheet("""QComboBox{color: #030013; background: #e0dde5; border-radius: 8px;} 
+                                            
+                                        """)
+        
+        hand_vectors_options.addItems([
+            "On",
+            "Off"
+        ])
+                
+        for i in range(hand_vectors_options.count()):
+            hand_vectors_options.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
+            
+        
+        sensitivity_setting = QWidget()
+        sensitivity_setting.setFixedHeight(80)
+        sensitivity_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(sensitivity_setting)
+        
+        sensitivity_title = QLabel("Sensitivity:", sensitivity_setting)
+        sensitivity_title.setGeometry(20,20,230, 40)
+        sensitivity_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = sensitivity_title.font()
+        f.setPointSize(16)
+        sensitivity_title.setFont(f)
+        
+        sensitivity_slider = QSlider(Qt.Horizontal, sensitivity_setting)
+        sensitivity_slider.setGeometry(300, 33, 120, 22)
+        sensitivity_slider.setMinimum(0)
+        sensitivity_slider.setMaximum(100)
+        sensitivity_slider.setValue(50)
+        
+        reload_setting = QWidget()
+        reload_setting.setFixedHeight(80)
+        reload_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(reload_setting)
+        
+        reload_title = QLabel("Reload profiles:", reload_setting)
+        reload_title.setGeometry(20,20,230, 40)
+        reload_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = reload_title.font()
+        f.setPointSize(16)
+        reload_title.setFont(f)
+        
+        reload_button = QPushButton(reload_setting)
+        reload_button.setGeometry(330, 10, 60, 60)
+        reload_button.setIcon(QIcon(reload_path))
+        reload_button.setIconSize(QSize(50,50))
+        reload_button.setStyleSheet("""
+                                    QPushButton {background: #252438; border: none;}
+                                    QPushButton:hover {background: #3c384d;}
+                                    """)
+        
+        brightness_setting = QWidget()
+        brightness_setting.setFixedHeight(80)
+        brightness_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(brightness_setting)
+        
+        brightness_title = QLabel("Brightness:", brightness_setting)
+        brightness_title.setGeometry(60,20,230, 40)
+        brightness_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = brightness_title.font()
+        f.setPointSize(16)
+        brightness_title.setFont(f)
+        
+        brightness_label = QLabel(brightness_setting)
+        brightness_label.setGeometry(20,25,30,30)
+        brightness_label.setPixmap(QPixmap(brightness_path))
+        brightness_label.setScaledContents(True)
+        
+        brightness_slider = QSlider(Qt.Horizontal, brightness_setting)
+        brightness_slider.setGeometry(300, 33, 120, 22)
+        brightness_slider.setMinimum(0)
+        brightness_slider.setMaximum(100)
+        brightness_slider.setValue(50)
+        
+        contrast_setting = QWidget()
+        contrast_setting.setFixedHeight(80)
+        contrast_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(contrast_setting)
+        
+        contrast_title = QLabel("Contrast:", contrast_setting)
+        contrast_title.setGeometry(60,20,230, 40)
+        contrast_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = contrast_title.font()
+        f.setPointSize(16)
+        contrast_title.setFont(f)
+        
+        contrast_label = QLabel(contrast_setting)
+        contrast_label.setGeometry(20,25,30,30)
+        contrast_label.setPixmap(QPixmap(contrast_path))
+        contrast_label.setScaledContents(True)
+        
+        contrast_slider = QSlider(Qt.Horizontal, contrast_setting)
+        contrast_slider.setGeometry(300, 33, 120, 22)
+        contrast_slider.setMinimum(0)
+        contrast_slider.setMaximum(100)
+        contrast_slider.setValue(50)
+        
+        grey_scale_setting = QWidget()
+        grey_scale_setting.setFixedHeight(80)
+        grey_scale_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(grey_scale_setting)
+        
+        grey_scale_title = QLabel("Grey scale:", grey_scale_setting)
+        grey_scale_title.setGeometry(60,20,230, 40)
+        grey_scale_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = grey_scale_title.font()
+        f.setPointSize(16)
+        grey_scale_title.setFont(f)
+        
+        grey_scale_label = QLabel(grey_scale_setting)
+        grey_scale_label.setGeometry(20,25,30,30)
+        grey_scale_label.setPixmap(QPixmap(grey_scale_path))
+        grey_scale_label.setScaledContents(True)
+        
+        grey_scale_box = QCheckBox(grey_scale_setting)
+        grey_scale_box.move(345,25)
+        grey_scale_box.setChecked(False)
+        grey_scale_box.setStyleSheet ("""
+                                      QCheckBox::indicator {width: 30px; height: 30px; border: 2px solid #e0dde5;}
+                                      QCheckBox::indicator:checked {background: #3c384d; image: url(ML_FILES/designerapp/resource/Check--Streamline-Core.png)}
+                                      """)
+        
+        instruction_setting = QWidget()
+        instruction_setting.setFixedHeight(80)
+        instruction_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(instruction_setting)
+        
+        instruction_title = QLabel("Instructions Manual:", instruction_setting)
+        instruction_title.setGeometry(20,20,230, 40)
+        instruction_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = instruction_title.font()
+        f.setPointSize(16)
+        instruction_title.setFont(f)
+        
+        instruction_button = QPushButton(instruction_setting)
+        instruction_button.setGeometry(330, 10, 60, 60)
+        instruction_button.setIcon(QIcon(instruction_path))
+        instruction_button.setIconSize(QSize(50,50))
+        instruction_button.setStyleSheet("""
+                                    QPushButton {background: #252438; border: none;}
+                                    QPushButton:hover {background: #3c384d;}
+                                    """)
+
+        dialog.exec()
 
     # main command sender
     def send_cmd(self, cmd: str):
@@ -402,7 +655,7 @@ class MainWindow(QWidget):
         setting_button.setIcon(QIcon(setting_path))
         setting_button.setIconSize(QSize(50,50))
         setting_button.setFlat(True)
-        setting_button.clicked.connect(self.on_setting_clicked)
+        setting_button.clicked.connect(self.setting_dialog)
 
         # ---- scroll area ----
         scroll_container = QScrollArea(new_tab)
