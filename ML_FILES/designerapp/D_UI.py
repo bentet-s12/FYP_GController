@@ -308,7 +308,7 @@ class MainWindow(QWidget):
         
         hand_mode_options = QComboBox(hand_mode_setting)
         hand_mode_options.setGeometry(320,20,110,40)
-        hand_mode_options.setStyleSheet("""QComboBox{color: #030013; background: #e0dde5; border-radius: 8px;} 
+        hand_mode_options.setStyleSheet("""color: #030013; background: #e0dde5; border-radius: 8px;
                                             
                                         """)
         
@@ -337,7 +337,7 @@ class MainWindow(QWidget):
         
         mouse_mode_options = QComboBox(mouse_mode_setting)
         mouse_mode_options.setGeometry(320,20,110,40)
-        mouse_mode_options.setStyleSheet("""QComboBox{color: #030013; background: #e0dde5; border-radius: 8px;} 
+        mouse_mode_options.setStyleSheet("""color: #030013; background: #e0dde5; border-radius: 8px; 
                                             
                                         """)
         
@@ -365,7 +365,7 @@ class MainWindow(QWidget):
         
         hand_vectors_options = QComboBox(hand_vectors_setting)
         hand_vectors_options.setGeometry(320,20,110,40)
-        hand_vectors_options.setStyleSheet("""QComboBox{color: #030013; background: #e0dde5; border-radius: 8px;} 
+        hand_vectors_options.setStyleSheet("""color: #030013; background: #e0dde5; border-radius: 8px; 
                                             
                                         """)
         
