@@ -21,6 +21,35 @@ from ProfileManager import ProfileManager
 
 BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 50555
+KEYMAP_SPECIAL = {
+    Qt.Key_Space: "space",
+    Qt.Key_Return: "enter",
+    Qt.Key_Enter: "enter",
+    Qt.Key_Escape: "esc",
+    Qt.Key_Tab: "tab",
+    Qt.Key_Backspace: "backspace",
+    Qt.Key_Delete: "delete",
+    Qt.Key_Insert: "insert",
+    Qt.Key_Home: "home",
+    Qt.Key_End: "end",
+    Qt.Key_PageUp: "pageup",
+    Qt.Key_PageDown: "pagedown",
+
+    Qt.Key_Up: "up",
+    Qt.Key_Down: "down",
+    Qt.Key_Left: "left",
+    Qt.Key_Right: "right",
+
+    Qt.Key_Shift: "shift",
+    Qt.Key_Control: "ctrl",
+    Qt.Key_Alt: "alt",
+    Qt.Key_Meta: "meta",
+    Qt.Key_CapsLock: "capslock",
+
+    Qt.Key_Print: "printscreen",
+    Qt.Key_ScrollLock: "scrolllock",
+    Qt.Key_Pause: "pause",
+}
 
 def backend_is_running(host=BACKEND_HOST, port=BACKEND_PORT, timeout=1.0) -> bool:
     try:
@@ -41,7 +70,91 @@ def start_backend_if_needed(proto_path: str, project_root: str, port: int = BACK
         cwd=project_root
     )
 
-    
+def keyevent_to_string(event) -> str | None:
+    """Return a nice key name, or None if you want to ignore the event."""
+    k = event.key()
+
+    # ignore "modifier-only" presses if you don't want them
+    # (if you DO want shift/ctrl/alt alone, comment this out)
+    # if k in (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta):
+    #     return None
+
+    if k in KEYMAP_SPECIAL:
+        return KEYMAP_SPECIAL[k]
+
+    # Function keys
+    if Qt.Key_F1 <= k <= Qt.Key_F35:
+        return f"f{k - Qt.Key_F1 + 1}"
+
+    # Numpad keys (optional)
+    if Qt.Key_0 <= k <= Qt.Key_9:
+        # This also catches normal top-row digits; that's fine.
+        return chr(ord("0") + (k - Qt.Key_0))
+
+    # Letters and symbols: prefer event.text()
+    txt = (event.text() or "").strip()
+    if txt:
+        return txt.lower()
+
+    # fallback for weird keys
+    return f"key_{int(k)}"
+
+class KeyCaptureDialog(QDialog):
+    """
+    Modal dialog:
+    - Press ANY key (including ESC) → captures key
+    - Click 'Set NULL' → explicit null binding
+    - Click 'Cancel' → abort
+    """
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Set Key")
+        self.setModal(True)
+        self.setFixedSize(360, 180)
+
+        self.captured_key = None  # str | "" | None
+
+        layout = QVBoxLayout(self)
+
+        label = QLabel(
+            "Press a key to bind\n\n"
+            "• Supports ESC, Shift, Ctrl, arrows, etc.\n"
+            "• Use buttons below to cancel or set NULL",
+            self
+        )
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+
+        # --- Buttons ---
+        btn_row = QHBoxLayout()
+
+        self.null_btn = QPushButton("Set NULL")
+        self.null_btn.setToolTip("Remove key binding (null)")
+        self.null_btn.clicked.connect(self._set_null)
+
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+
+        btn_row.addStretch(1)
+        btn_row.addWidget(self.null_btn)
+        btn_row.addWidget(self.cancel_btn)
+        btn_row.addStretch(1)
+
+        layout.addLayout(btn_row)
+
+    def _set_null(self):
+        self.captured_key = ""
+        self.accept()
+
+    def keyPressEvent(self, event):
+        s = keyevent_to_string(event)
+        if s:
+            self.captured_key = s
+            self.accept()
+            return
+
+        event.ignore()
+
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -1389,14 +1502,33 @@ class MainWindow(QWidget):
             background: transparent;
         """)
 
-        # ----- Editable KEY field (edits "key_pressed") -----
-        key_edit = QLineEdit("" if key is None else str(key), sub_bar_frame)
-        key_edit.setGeometry(325, 55, 150, 40)
-        key_edit.setAlignment(Qt.AlignCenter)
-        key_edit.setStyleSheet("""
-            background-color: rgb(224, 221, 229);
-            color: rgb(0, 0, 0);
+        # ----- KEY capture button (replaces text box) -----
+        key_btn = QPushButton(sub_bar_frame)
+        key_btn.setGeometry(325, 55, 150, 40)
+
+        def _set_key_btn_text(val: str | None):
+            if val is None or str(val).strip() == "":
+                key_btn.setText("Set Key")
+            else:
+                key_btn.setText(str(val).strip())
+
+        _set_key_btn_text(key)
+
+        key_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgb(224, 221, 229);
+                color: rgb(0, 0, 0);
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: rgb(200, 198, 205);
+            }
+            QPushButton:pressed {
+                background-color: rgb(180, 178, 185);
+            }
         """)
+
 
         # ----- Input type label -----
         input_type = QTextEdit("INPUT TYPE", sub_bar_frame)
@@ -1528,7 +1660,7 @@ class MainWindow(QWidget):
                 profile_id=profile_id,
                 action_name=old_id,                          # stable lookup (current id)
                 new_gname=action_box.currentText().strip(),   # writes to G_name
-                new_key=key_edit.text().strip(),
+                new_key=key_btn.text().strip() if key_btn.text().strip().lower() != "set key" else "",
                 new_input_type=input_type_box.currentText(),
                 new_name=new_id                               # writes to name
             )
@@ -1537,9 +1669,33 @@ class MainWindow(QWidget):
             if new_id and new_id != old_id:
                 action_id_ref["id"] = new_id
 
+        def on_key_button_clicked():
+            dlg = KeyCaptureDialog(self)
+            if dlg.exec() != QDialog.Accepted:
+                return
+
+            # captured_key meanings:
+            # None  -> cancelled
+            # ""    -> NULL
+            # "a"   -> real key
+            val = dlg.captured_key
+
+            if val is None:
+                return
+
+            if val == "":
+                _set_key_btn_text("NULL")
+            else:
+                _set_key_btn_text(val)
+
+            commit_change()
+
+
+        key_btn.clicked.connect(on_key_button_clicked)
+
+
 
         gesture_edit.editingFinished.connect(commit_change)
-        key_edit.editingFinished.connect(commit_change)
         input_type_box.currentTextChanged.connect(lambda _: commit_change())
         action_box.currentTextChanged.connect(lambda _: commit_change())
 
