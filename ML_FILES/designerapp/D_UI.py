@@ -323,6 +323,25 @@ class MainWindow(QWidget):
             hand_mode_options.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
             
         
+        hand_mode_cycle_setting = QWidget()
+        hand_mode_cycle_setting.setFixedHeight(80)
+        hand_mode_cycle_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(hand_mode_cycle_setting)
+        
+        hand_mode_cycle_label = QLabel("Hand mode cycle key:", hand_mode_cycle_setting)
+        hand_mode_cycle_label.setGeometry(20,20,230, 40)
+        hand_mode_cycle_label.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = hand_mode_cycle_label.font()
+        f.setPointSize(16)
+        hand_mode_cycle_label.setFont(f)
+        
+        hand_mode_cycle_input = QTextEdit(hand_mode_cycle_setting)
+        hand_mode_cycle_input.setGeometry(320,25,110,30)
+        hand_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5;")
+        hand_mode_cycle_input.setFontPointSize(12)
+        hand_mode_cycle_input.setAlignment(Qt.AlignCenter)
+            
+        
         mouse_mode_setting = QWidget()
         mouse_mode_setting.setFixedHeight(80)
         mouse_mode_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
@@ -349,6 +368,24 @@ class MainWindow(QWidget):
                 
         for i in range(mouse_mode_options.count()):
             mouse_mode_options.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
+            
+        mouse_mode_cycle_setting = QWidget()
+        mouse_mode_cycle_setting.setFixedHeight(80)
+        mouse_mode_cycle_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(mouse_mode_cycle_setting)
+        
+        mouse_mode_cycle_label = QLabel("Hand mode cycle key:", mouse_mode_cycle_setting)
+        mouse_mode_cycle_label.setGeometry(20,20,230, 40)
+        mouse_mode_cycle_label.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = mouse_mode_cycle_label.font()
+        f.setPointSize(16)
+        mouse_mode_cycle_label.setFont(f)
+        
+        mouse_mode_cycle_input = QTextEdit(mouse_mode_cycle_setting)
+        mouse_mode_cycle_input.setGeometry(320,25,110,30)
+        mouse_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5;")
+        mouse_mode_cycle_input.setFontPointSize(12)
+        mouse_mode_cycle_input.setAlignment(Qt.AlignCenter)
             
         
         hand_vectors_setting = QWidget()
