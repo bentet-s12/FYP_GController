@@ -32,8 +32,8 @@
         {
             "name": "neutral",
             "G_name": "null",
-            "key_pressed": null,
-            "input_type": null,
+            "key_pressed": "NULL",
+            "input_type": "Click",
             "key_type": null
         }
     ]
