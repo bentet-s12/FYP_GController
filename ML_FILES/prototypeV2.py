@@ -18,7 +18,7 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 # --- PySide6 camera window (replaces cv2.imshow + cv2 trackbars) ---
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap, QFont
 from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSlider, QCheckBox, QFrame
 )
@@ -466,35 +466,53 @@ class CameraWindow(QWidget):
         controls = QFrame()
         controls.setStyleSheet("background: #252438; border-radius: 12px;")
         c = QVBoxLayout(controls)
-        c.setContentsMargins(12, 12, 12, 12)
-        c.setSpacing(10)
+        c.setContentsMargins(12, 20, 12, 20)
+        c.setSpacing(30)
 
         # Contrast slider: map UI 0..350 => contrast -0.5..3.0
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Contrast"))
+        row1_label = QLabel("Contrast: ")
+        font = row1_label.font()
+        font.setPointSize(16)
+        row1_label.setFont(font)
+        row1.addWidget(row1_label)
         self.sld_contrast = QSlider(Qt.Horizontal)
         self.sld_contrast.setRange(0, 350)
         self.sld_contrast.setValue(int(round((float(self.app.cam_contrast) + 0.5) * 100)))
+        self.sld_contrast.setStyleSheet("""
+                                            margin-bottom: -6px;
+                                        """)
         row1.addWidget(self.sld_contrast, stretch=1)
         c.addLayout(row1)
 
         # Brightness slider: UI 0..200 => brightness -100..100
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Brightness"))
+        row2_label = QLabel("Brightness: ")
+        font = row2_label.font()
+        font.setPointSize(16)
+        row2_label.setFont(font)
+        row2.addWidget(row2_label)
         self.sld_brightness = QSlider(Qt.Horizontal)
         self.sld_brightness.setRange(0, 200)
         self.sld_brightness.setValue(int(self.app.cam_brightness) + 100)
+        self.sld_brightness.setStyleSheet("""
+                                            margin-bottom: -6px;
+                                        """)
         row2.addWidget(self.sld_brightness, stretch=1)
         c.addLayout(row2)
 
         # Greyscale checkbox (you asked: greyscale should be a checkbox)
+        font = QFont()
+        font.setPointSize(16)
         self.chk_gray = QCheckBox("Greyscale")
         self.chk_gray.setChecked(bool(self.app.cam_grayscale))
+        self.chk_gray.setFont(font)
         c.addWidget(self.chk_gray)
 
         # Optional: Apply-to-tracking checkbox (you already have it)
         self.chk_apply_tracking = QCheckBox("Apply adjustments to tracking (advanced)")
         self.chk_apply_tracking.setChecked(bool(self.app.cam_apply_to_tracking))
+        self.chk_apply_tracking.setFont(font)
         c.addWidget(self.chk_apply_tracking)
 
         # Basic label style (match your palette)
