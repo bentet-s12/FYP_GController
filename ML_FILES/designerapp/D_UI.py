@@ -8,7 +8,7 @@ import threading
 import socket
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtCore import QFile, Qt, QIODevice, QTimer
-from PySide6.QtGui import QPixmap, QIcon, QFont, QKeySequence
+from PySide6.QtGui import QPixmap, QIcon, QFont, QKeySequence, QKeyEvent
 from PySide6.QtCore import QSize
 from PySide6.QtWidgets import ( 
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
@@ -23,32 +23,25 @@ BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 50555
 KEYMAP_SPECIAL = {
     Qt.Key_Space: "space",
+    Qt.Key_Escape: "esc",
     Qt.Key_Return: "enter",
     Qt.Key_Enter: "enter",
-    Qt.Key_Escape: "esc",
-    Qt.Key_Tab: "tab",
     Qt.Key_Backspace: "backspace",
+    Qt.Key_Tab: "tab",
     Qt.Key_Delete: "delete",
     Qt.Key_Insert: "insert",
     Qt.Key_Home: "home",
     Qt.Key_End: "end",
     Qt.Key_PageUp: "pageup",
     Qt.Key_PageDown: "pagedown",
-
-    Qt.Key_Up: "up",
-    Qt.Key_Down: "down",
     Qt.Key_Left: "left",
     Qt.Key_Right: "right",
-
+    Qt.Key_Up: "up",
+    Qt.Key_Down: "down",
     Qt.Key_Shift: "shift",
     Qt.Key_Control: "ctrl",
     Qt.Key_Alt: "alt",
     Qt.Key_Meta: "meta",
-    Qt.Key_CapsLock: "capslock",
-
-    Qt.Key_Print: "printscreen",
-    Qt.Key_ScrollLock: "scrolllock",
-    Qt.Key_Pause: "pause",
 }
 
 def backend_is_running(host=BACKEND_HOST, port=BACKEND_PORT, timeout=1.0) -> bool:
@@ -71,33 +64,24 @@ def start_backend_if_needed(proto_path: str, project_root: str, port: int = BACK
     )
 
 def keyevent_to_string(event) -> str | None:
-    """Return a nice key name, or None if you want to ignore the event."""
     k = event.key()
 
-    # ignore "modifier-only" presses if you don't want them
-    # (if you DO want shift/ctrl/alt alone, comment this out)
-    # if k in (Qt.Key_Shift, Qt.Key_Control, Qt.Key_Alt, Qt.Key_Meta):
-    #     return None
-
+    # map well-known special keys
     if k in KEYMAP_SPECIAL:
         return KEYMAP_SPECIAL[k]
 
-    # Function keys
+    # function keys
     if Qt.Key_F1 <= k <= Qt.Key_F35:
         return f"f{k - Qt.Key_F1 + 1}"
 
-    # Numpad keys (optional)
-    if Qt.Key_0 <= k <= Qt.Key_9:
-        # This also catches normal top-row digits; that's fine.
-        return chr(ord("0") + (k - Qt.Key_0))
-
-    # Letters and symbols: prefer event.text()
-    txt = (event.text() or "").strip()
-    if txt:
+    # printable text (letters, digits, symbols)
+    txt = (event.text() or "")
+    if txt.strip():
         return txt.lower()
 
-    # fallback for weird keys
+    # fallback
     return f"key_{int(k)}"
+
 
 class KeyCaptureDialog(QDialog):
     """
