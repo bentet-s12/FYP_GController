@@ -558,46 +558,6 @@ class ClickTesterGUI:
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
-        # ---- Camera Adjustments ----
-        frame_cam = tk.LabelFrame(self.main, text="Camera")
-        frame_cam.pack(fill="x", padx=10, pady=8)
-
-        # Contrast slider
-        tk.Label(frame_cam, text="Contrast").grid(row=0, column=0, sticky="w")
-        self.contrast_var = tk.DoubleVar(value=self.app.cam_contrast)
-        tk.Scale(
-            frame_cam, from_=-0.5, to=3.0, resolution=0.05,
-            orient="horizontal", variable=self.contrast_var,
-            command=lambda _=None: self._on_contrast_change()
-        ).grid(row=0, column=1, sticky="ew", padx=8)
-
-        # Brightness slider (-100 to +100) (optional but useful)
-        tk.Label(frame_cam, text="Brightness").grid(row=1, column=0, sticky="w")
-        self.brightness_var = tk.IntVar(value=self.app.cam_brightness)
-        tk.Scale(
-            frame_cam, from_=-100, to=100, resolution=1,
-            orient="horizontal", variable=self.brightness_var,
-            command=lambda _=None: self._on_brightness_change()
-        ).grid(row=1, column=1, sticky="ew", padx=8)
-
-        # Grayscale toggle
-        self.gray_var = tk.BooleanVar(value=self.app.cam_grayscale)
-        tk.Checkbutton(
-            frame_cam, text="Grayscale",
-            variable=self.gray_var,
-            command=self._on_gray_toggle
-        ).grid(row=2, column=0, sticky="w", pady=(4,0))
-
-        # Apply to tracking toggle (advanced)
-        self.track_adj_var = tk.BooleanVar(value=self.app.cam_apply_to_tracking)
-        tk.Checkbutton(
-            frame_cam, text="Apply adjustments to tracking (advanced)",
-            variable=self.track_adj_var,
-            command=self._on_track_adj_toggle
-        ).grid(row=2, column=1, sticky="w", pady=(4,0))
-
-        frame_cam.columnconfigure(1, weight=1)
-
         self.root.update_idletasks()
         self.root.minsize(self.root.winfo_width(), self.root.winfo_height())
 
@@ -947,6 +907,58 @@ class GestureControllerApp:
         if self.gui is not None:
             self.gui.hide()
 
+    def _start_gui_thread(self):
+        self._gui_thread = threading.Thread(target=self._gui_thread_main, daemon=True)
+        self._gui_thread.start()
+
+    def _gui_thread_main(self):
+        # Tk must be CREATED in the same thread that runs mainloop
+        try:
+            self.gui = ClickTesterGUI(self)
+            self.gui.hide()  # start hidden
+
+            def pump_queue():
+                # Process all pending GUI messages
+                try:
+                    while True:
+                        msg = self._gui_queue.get_nowait()
+                        if msg is None:
+                            # shutdown signal
+                            try:
+                                self.gui.destroy()
+                            except Exception:
+                                pass
+                            return
+
+                        kind = msg[0]
+
+                        if kind == "SHOW":
+                            self.gui.show()
+
+                        elif kind == "HIDE":
+                            self.gui.hide()
+
+                        elif kind == "STATUS":
+                            _, mode_text, gesture_text, mapped_text, fired_text = msg
+                            self.gui.update_status(mode_text, gesture_text, mapped_text, fired_text)
+
+                except queue.Empty:
+                    pass
+                except Exception as e:
+                    print("[GUI] pump_queue error:", e, flush=True)
+
+                # reschedule
+                try:
+                    self.gui.root.after(16, pump_queue)  # ~60fps GUI responsiveness
+                except Exception:
+                    pass
+
+            self.gui.root.after(16, pump_queue)
+            self.gui.root.mainloop()
+
+        except Exception as e:
+            print("[GUI] thread crashed:", e, flush=True)
+            self.gui = None
 
     def request_collect_gesture(self, name: str):
         name = (name or "").strip()
@@ -1503,8 +1515,45 @@ class GestureControllerApp:
         return mapped_text, fired_text
 
 
+    def _ensure_camera_trackbars(self):
+        # Create trackbars under the OpenCV camera window.
+        if getattr(self, "_trackbars_created", False):
+            return
+        if not getattr(self, "_camera_window_open", False):
+            return
 
-    
+        win = self._window_name
+
+        # ---- mapping helpers ----
+        # Brightness: trackbar 0..200  -> -100..+100
+        def on_brightness(v):
+            self.cam_brightness = int(v) - 100
+
+        # Contrast: trackbar 0..350 -> -0.50..3.00  (step 0.01)
+        # contrast = (v / 100) - 0.50
+        def on_contrast(v):
+            self.cam_contrast = (float(v) / 100.0) - 0.50
+
+        # Grayscale: 0/1
+        def on_gray(v):
+            self.cam_grayscale = bool(v)
+
+        # Create trackbars
+        cv2.createTrackbar("Brightness", win, int(self.cam_brightness) + 100, 200, on_brightness)
+
+        contrast_pos = int(round((float(self.cam_contrast) + 0.50) * 100.0))
+        contrast_pos = max(0, min(350, contrast_pos))
+        cv2.createTrackbar("Contrast", win, contrast_pos, 350, on_contrast)
+
+        cv2.createTrackbar("Grayscale", win, 1 if self.cam_grayscale else 0, 1, on_gray)
+
+        self._trackbars_created = True
+
+    def _reset_camera_trackbars_flag(self):
+        """Call when the camera window is destroyed so trackbars are recreated next time."""
+        self._trackbars_created = False
+
+        
     def _apply_camera_adjustments(self, frame_bgr):
         """
         Apply brightness/contrast and optional grayscale for display/tracking.
@@ -1646,58 +1695,7 @@ class GestureControllerApp:
 
         print("[COLLECT] Exit to background")
 
-    def _start_gui_thread(self):
-        self._gui_thread = threading.Thread(target=self._gui_thread_main, daemon=True)
-        self._gui_thread.start()
-
-    def _gui_thread_main(self):
-        # Tk must be CREATED in the same thread that runs mainloop
-        try:
-            self.gui = ClickTesterGUI(self)
-            self.gui.hide()  # start hidden
-
-            def pump_queue():
-                # Process all pending GUI messages
-                try:
-                    while True:
-                        msg = self._gui_queue.get_nowait()
-                        if msg is None:
-                            # shutdown signal
-                            try:
-                                self.gui.destroy()
-                            except Exception:
-                                pass
-                            return
-
-                        kind = msg[0]
-
-                        if kind == "SHOW":
-                            self.gui.show()
-
-                        elif kind == "HIDE":
-                            self.gui.hide()
-
-                        elif kind == "STATUS":
-                            _, mode_text, gesture_text, mapped_text, fired_text = msg
-                            self.gui.update_status(mode_text, gesture_text, mapped_text, fired_text)
-
-                except queue.Empty:
-                    pass
-                except Exception as e:
-                    print("[GUI] pump_queue error:", e, flush=True)
-
-                # reschedule
-                try:
-                    self.gui.root.after(16, pump_queue)  # ~60fps GUI responsiveness
-                except Exception:
-                    pass
-
-            self.gui.root.after(16, pump_queue)
-            self.gui.root.mainloop()
-
-        except Exception as e:
-            print("[GUI] thread crashed:", e, flush=True)
-            self.gui = None
+    
 
     def _delete_gesture_and_vectors(self, gesture_name: str):
         gesture_name = (gesture_name or "").strip()
@@ -2026,6 +2024,8 @@ class GestureControllerApp:
                     except Exception as e:
                         print("[CV] window create failed:", e)
                     self._camera_window_open = True
+                    self._reset_camera_trackbars_flag()   # ensure fresh state
+                    self._ensure_camera_trackbars()       # create sliders below the camera view
 
                 if self.collect_running:
                     self._draw_collect_overlay(frame_display)
@@ -2047,6 +2047,7 @@ class GestureControllerApp:
                     cv2.destroyWindow(self._window_name)
                     self._camera_window_open = False
                     self._cam_window_sized = False
+                    self._reset_camera_trackbars_flag()
 
 
                 time.sleep(0.01)
