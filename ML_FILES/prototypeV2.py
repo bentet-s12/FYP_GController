@@ -16,8 +16,12 @@ import threading
 from screeninfo import get_monitors
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
-
-
+# --- PySide6 camera window (replaces cv2.imshow + cv2 trackbars) ---
+from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import (
+    QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSlider, QCheckBox, QFrame
+)
 
 
 from Actions import Actions  # your pydirectinput-based Actions.py
@@ -436,6 +440,123 @@ def load_actions_from_profile_json(profile_path: str):
         print("[PROFILE] Failed to load:", e)
         return action_map
 
+class CameraWindow(QWidget):
+    """
+    Shows frames with preserved aspect ratio (letterbox) + sliders/checkbox.
+    """
+    def __init__(self, app_ref):
+        super().__init__()
+        self.app = app_ref  # GestureControllerApp instance (read/write cam params)
+
+        self.setWindowTitle("Gesture Controller Camera")
+        self.setMinimumSize(640, 480)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(10, 10, 10, 10)
+        root.setSpacing(10)
+
+        # Frame display
+        self.video = QLabel("No frame")
+        self.video.setAlignment(Qt.AlignCenter)
+        self.video.setStyleSheet("background: black; border-radius: 8px;")
+        self.video.setMinimumHeight(300)
+        root.addWidget(self.video, stretch=1)
+
+        # Controls container (style it like your settings GUI)
+        controls = QFrame()
+        controls.setStyleSheet("background: #252438; border-radius: 12px;")
+        c = QVBoxLayout(controls)
+        c.setContentsMargins(12, 12, 12, 12)
+        c.setSpacing(10)
+
+        # Contrast slider: map UI 0..350 => contrast -0.5..3.0
+        row1 = QHBoxLayout()
+        row1.addWidget(QLabel("Contrast"))
+        self.sld_contrast = QSlider(Qt.Horizontal)
+        self.sld_contrast.setRange(0, 350)
+        self.sld_contrast.setValue(int(round((float(self.app.cam_contrast) + 0.5) * 100)))
+        row1.addWidget(self.sld_contrast, stretch=1)
+        c.addLayout(row1)
+
+        # Brightness slider: UI 0..200 => brightness -100..100
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Brightness"))
+        self.sld_brightness = QSlider(Qt.Horizontal)
+        self.sld_brightness.setRange(0, 200)
+        self.sld_brightness.setValue(int(self.app.cam_brightness) + 100)
+        row2.addWidget(self.sld_brightness, stretch=1)
+        c.addLayout(row2)
+
+        # Greyscale checkbox (you asked: greyscale should be a checkbox)
+        self.chk_gray = QCheckBox("Greyscale")
+        self.chk_gray.setChecked(bool(self.app.cam_grayscale))
+        c.addWidget(self.chk_gray)
+
+        # Optional: Apply-to-tracking checkbox (you already have it)
+        self.chk_apply_tracking = QCheckBox("Apply adjustments to tracking (advanced)")
+        self.chk_apply_tracking.setChecked(bool(self.app.cam_apply_to_tracking))
+        c.addWidget(self.chk_apply_tracking)
+
+        # Basic label style (match your palette)
+        controls.setStyleSheet("""
+            QFrame { background: #252438; border-radius: 12px; }
+            QLabel { color: #e0dde5; }
+            QCheckBox { color: #e0dde5; }
+        """)
+        root.addWidget(controls, stretch=0)
+
+        # Wire UI -> app variables
+        self.sld_contrast.valueChanged.connect(self._on_contrast)
+        self.sld_brightness.valueChanged.connect(self._on_brightness)
+        self.chk_gray.toggled.connect(self._on_gray)
+        self.chk_apply_tracking.toggled.connect(self._on_apply_tracking)
+
+        self._last_pixmap = None
+
+    def _on_contrast(self, v: int):
+        self.app.cam_contrast = (float(v) / 100.0) - 0.50
+
+    def _on_brightness(self, v: int):
+        self.app.cam_brightness = int(v) - 100
+
+    def _on_gray(self, on: bool):
+        self.app.cam_grayscale = bool(on)
+
+    def _on_apply_tracking(self, on: bool):
+        self.app.cam_apply_to_tracking = bool(on)
+
+    def set_frame_bgr(self, frame_bgr):
+        """
+        Convert BGR numpy frame -> QPixmap and display letterboxed with aspect ratio preserved.
+        """
+        if frame_bgr is None:
+            return
+
+        h, w = frame_bgr.shape[:2]
+        if h <= 0 or w <= 0:
+            return
+
+        # Convert BGR -> RGB
+        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+        # Build QImage (deep copy to be safe)
+        qimg = QImage(rgb.data, w, h, 3 * w, QImage.Format_RGB888).copy()
+        pix = QPixmap.fromImage(qimg)
+        self._last_pixmap = pix
+
+        # Letterbox: keep aspect ratio inside label
+        target = self.video.size()
+        scaled = pix.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        self.video.setPixmap(scaled)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # re-apply scaling on resize
+        if self._last_pixmap is not None:
+            target = self.video.size()
+            scaled = self._last_pixmap.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.video.setPixmap(scaled)
+
 
 # =================================================
 #   GUI
@@ -815,10 +936,8 @@ class GestureControllerApp:
         self.gui = None  # created inside GUI thread
 
         self.want_camera_view = False
-        self._camera_window_open = False
         self._window_name = "Gesture Controller"
         self._req_toggle_camera = False
-        self._cam_window_sized = False
 
         self.hand_mode = "multi_keyboard"
         self.mouse_mode = "DISABLED"
@@ -894,6 +1013,11 @@ class GestureControllerApp:
         self._delete_req_name = None
         self._req_profile_id = None
         self.current_profile_path = PROFILE_JSON_PATH
+
+        self.qt_app = None
+        self.camera_qt = None
+        self._last_frame_for_qt = None
+
 
 
         if self.enable_camera:
@@ -978,6 +1102,19 @@ class GestureControllerApp:
         self.screen_w = screen_w
         self.screen_h = screen_h
 
+    def _ensure_qt_camera(self):
+        if self.camera_qt is not None:
+            return
+
+        # Create QApplication only once
+        from PySide6.QtWidgets import QApplication
+        if QApplication.instance() is None:
+            self.qt_app = QApplication([])
+        else:
+            self.qt_app = QApplication.instance()
+
+        self.camera_qt = CameraWindow(self)
+        self.camera_qt.hide()
 
     def _init_camera_and_models(self):
         self.cap = cv2.VideoCapture(0)
@@ -1140,7 +1277,6 @@ class GestureControllerApp:
         self.collect_name = gesture_name
         # FORCE camera to show immediately when collection begins
         self.want_camera_view = True
-        self._camera_window_open = False  # force re-create window
 
         # reset counters
         self.collect_saved = 0
@@ -1509,96 +1645,6 @@ class GestureControllerApp:
 
         return mapped_text, fired_text
 
-
-    def _ensure_camera_trackbars(self):
-        # Create trackbars under the OpenCV camera window.
-        if getattr(self, "_trackbars_created", False):
-            return
-        if not getattr(self, "_camera_window_open", False):
-            return
-
-        win = self._window_name
-
-        # ---- mapping helpers ----
-        # Brightness: trackbar 0..200  -> -100..+100
-        def on_brightness(v):
-            self.cam_brightness = int(v) - 100
-
-        # Contrast: trackbar 0..350 -> -0.50..3.00  (step 0.01)
-        # contrast = (v / 100) - 0.50
-        def on_contrast(v):
-            self.cam_contrast = (float(v) / 100.0) - 0.50
-
-        # Grayscale: 0/1
-        def on_gray(v):
-            self.cam_grayscale = bool(v)
-
-        # Create trackbars
-        cv2.createTrackbar("Brightness", win, int(self.cam_brightness) + 100, 200, on_brightness)
-
-        contrast_pos = int(round((float(self.cam_contrast) + 0.50) * 100.0))
-        contrast_pos = max(0, min(350, contrast_pos))
-        cv2.createTrackbar("Contrast", win, contrast_pos, 350, on_contrast)
-
-        cv2.createTrackbar("Grayscale", win, 1 if self.cam_grayscale else 0, 1, on_gray)
-
-        self._trackbars_created = True
-
-    def _reset_camera_trackbars_flag(self):
-        """Call when the camera window is destroyed so trackbars are recreated next time."""
-        self._trackbars_created = False
-
-    def _get_window_inner_size(self, win_name: str):
-            """
-            Returns (w, h) of the drawable area for an OpenCV window.
-            Requires OpenCV that supports getWindowImageRect (most 4.x builds do).
-            """
-            try:
-                x, y, w, h = cv2.getWindowImageRect(win_name)
-                if w > 0 and h > 0:
-                    return w, h
-            except Exception:
-                pass
-            return None
-
-    def _letterbox_to_window(self, frame_bgr, win_w: int, win_h: int):
-        """
-        Resize + pad frame to exactly (win_w, win_h) while preserving aspect ratio.
-        """
-        fh, fw = frame_bgr.shape[:2]
-        if fw <= 0 or fh <= 0 or win_w <= 0 or win_h <= 0:
-            return frame_bgr
-
-        scale = min(win_w / fw, win_h / fh)
-        new_w = max(1, int(fw * scale))
-        new_h = max(1, int(fh * scale))
-
-        resized = cv2.resize(frame_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
-
-        pad_left = (win_w - new_w) // 2
-        pad_right = win_w - new_w - pad_left
-        pad_top = (win_h - new_h) // 2
-        pad_bottom = win_h - new_h - pad_top
-
-        out = cv2.copyMakeBorder(
-            resized,
-            pad_top, pad_bottom, pad_left, pad_right,
-            borderType=cv2.BORDER_CONSTANT,
-            value=(0, 0, 0)
-        )
-        return out
-        
-    def _is_cv_window_alive(self, win_name: str) -> bool:
-        """
-        Returns False if OpenCV window was closed (X pressed) or doesn't exist.
-        """
-        try:
-            # On many builds: returns 0 if hidden, 1 if visible, -1 if doesn't exist
-            v = cv2.getWindowProperty(win_name, cv2.WND_PROP_VISIBLE)
-            return v >= 1
-        except Exception:
-            return False
-
     def _apply_camera_adjustments(self, frame_bgr):
         """
         Apply brightness/contrast and optional grayscale for display/tracking.
@@ -1861,7 +1907,7 @@ class GestureControllerApp:
             # Decide what you want to display
             frame_display = self._apply_camera_adjustments(frame.copy())
 
-
+            
             pointer_hand = None
             action_hand = None
 
@@ -2062,61 +2108,36 @@ class GestureControllerApp:
                     pass
 
 
+            # ---- PySide6 camera window update ----
             if self.want_camera_view:
-                if not self._camera_window_open:
-                    try:
-                        cv2.namedWindow(self._window_name, cv2.WINDOW_NORMAL)
-                        h, w = frame_display.shape[:2]
-                        cv2.resizeWindow(self._window_name, w, h)
-                    except Exception as e:
-                        print("[CV] window create failed:", e)
-                    self._camera_window_open = True
-                    self._reset_camera_trackbars_flag()   # ensure fresh state
-                    self._ensure_camera_trackbars()       # create sliders below the camera view
+                self._ensure_qt_camera()
 
                 if self.collect_running:
                     self._draw_collect_overlay(frame_display)
 
-                win_size = self._get_window_inner_size(self._window_name)
-                if win_size is not None:
-                    win_w, win_h = win_size
-                    frame_to_show = self._letterbox_to_window(frame_display, win_w, win_h)
-                else:
-                    frame_to_show = frame_display
+                if not self.camera_qt.isVisible():
+                    self.camera_qt.show()
+                    self.camera_qt.raise_()
+                    self.camera_qt.activateWindow()
 
-                cv2.imshow(self._window_name, frame_to_show)
+                self.camera_qt.set_frame_bgr(frame_display)
 
-                # IMPORTANT: create the real OS window first
-                k = cv2.waitKey(1) & 0xFF
-                # --- Detect user pressed X on the OpenCV window ---
-                if self._camera_window_open and not self._is_cv_window_alive(self._window_name):
-                    print("[CV] Window closed by user (X). Resetting sliders + state.", flush=True)
+                try:
+                    self.qt_app.processEvents()
+                except Exception:
+                    pass
 
-                    self._camera_window_open = False
-                    self.want_camera_view = False          # optional but recommended
-                    self._cam_window_sized = False
-
-                    self._reset_camera_trackbars_flag()    # <-- THIS makes sliders recreate next time
-                    self._raised_once = False
-                    continue
-
-                # Bring to front AFTER first imshow
-                if not getattr(self, "_raised_once", False):
-                    bring_window_to_front(self._window_name)
-                    self._raised_once = True
             else:
-                # reset the raised flag when hidden
-                self._raised_once = False
+                if self.camera_qt is not None and self.camera_qt.isVisible():
+                    self.camera_qt.hide()
+                    try:
+                        self.qt_app.processEvents()
+                    except Exception:
+                        pass
 
-                if self._camera_window_open:
-                    cv2.destroyWindow(self._window_name)
-                    self._camera_window_open = False
-                    self._cam_window_sized = False
-                    self._reset_camera_trackbars_flag()
+            # IMPORTANT: no cv2.waitKey anymore
+            k = 255
 
-
-                time.sleep(0.01)
-                k = 255
 
 
             # ---------- KEY HANDLING (SAFE & EXTENDABLE) ----------
@@ -2177,7 +2198,7 @@ class GestureControllerApp:
                 g = self._delete_req_name
                 self._delete_req_name = None
                 self._delete_gesture_and_vectors(g)
-
+            
 
             # ===== 2) Normal runtime shortcuts (always available) =====
             if not handled:
@@ -2220,9 +2241,6 @@ class GestureControllerApp:
                 self._gui_queue.put(None)  # shutdown signal
             except Exception:
                 pass
-
-
-        self._camera_window_open = False
 
 class BootstrapApp:
     def __init__(self):
