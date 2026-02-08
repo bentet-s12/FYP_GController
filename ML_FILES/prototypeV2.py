@@ -290,50 +290,6 @@ def landmarks_to_feature_vector(hand_lm, mirror=False):
 
     return coords.reshape(-1)
 
-
-
-# =================================================
-#   PROFILE JSON LOADER (BYPASS ProfileManager)
-# =================================================
-
-# ===================== OLD PROFILE LOADER (COMMENTED OUT) =====================
-# def load_actions_from_profile_json(profile_path: str):
-#     """
-#     Loads profile_1.json (your format) and returns:
-#       action_map: dict[name -> Actions]
-#     """
-#     action_map = {}
-#
-#     if not os.path.exists(profile_path):
-#         print(f"[PROFILE] Missing: {profile_path}")
-#         return action_map
-#
-#     try:
-#         with open(profile_path, "r", encoding="utf-8") as f:
-#             data = json.load(f)
-#
-#         actions = data.get("Actions", [])
-#         for a in actions:
-#             name = a.get("name")
-#             key = a.get("key_pressed")
-#             input_type = a.get("input_type")
-#             key_type = a.get("key_type")
-#
-#             # skip empty/default placeholders
-#             if not name or name == "default":
-#                 continue
-#             if not key or not input_type:
-#                 continue
-#
-#             action_map[name] = Actions(name, key, input_type, key_type)
-#
-#         print(f"[PROFILE] Loaded {len(action_map)} actions from {os.path.basename(profile_path)}: {list(action_map.keys())}")
-#         return action_map
-#
-#     except Exception as e:
-#         print("[PROFILE] Failed to load:", e)
-#         return action_map
-
 # ===================== NEW PROFILE LOADER (ACTIVE) =====================
 
 def load_gesture_list(gesturelist_path: str) -> list[str]:
@@ -555,6 +511,46 @@ class ClickTesterGUI:
         tk.Button(frame_mouse, text="Disabled", command=lambda: self.app.set_mouse_mode("DISABLED")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_mouse, text="Camera", command=lambda: self.app.set_mouse_mode("CAMERA")).pack(side=tk.LEFT, padx=4)
         tk.Button(frame_mouse, text="Cursor", command=lambda: self.app.set_mouse_mode("CURSOR")).pack(side=tk.LEFT, padx=4)
+
+        # ---- Camera Adjustments ----
+        frame_cam = tk.LabelFrame(self.main, text="Camera")
+        frame_cam.pack(fill="x", padx=10, pady=8)
+
+        # Contrast slider
+        tk.Label(frame_cam, text="Contrast").grid(row=0, column=0, sticky="w")
+        self.contrast_var = tk.DoubleVar(value=self.app.cam_contrast)
+        tk.Scale(
+            frame_cam, from_=-0.5, to=3.0, resolution=0.05,
+            orient="horizontal", variable=self.contrast_var,
+            command=lambda _=None: self._on_contrast_change()
+        ).grid(row=0, column=1, sticky="ew", padx=8)
+
+        # Brightness slider
+        tk.Label(frame_cam, text="Brightness").grid(row=1, column=0, sticky="w")
+        self.brightness_var = tk.IntVar(value=self.app.cam_brightness)
+        tk.Scale(
+            frame_cam, from_=-100, to=100, resolution=1,
+            orient="horizontal", variable=self.brightness_var,
+            command=lambda _=None: self._on_brightness_change()
+        ).grid(row=1, column=1, sticky="ew", padx=8)
+
+        # Grayscale toggle
+        self.gray_var = tk.BooleanVar(value=self.app.cam_grayscale)
+        tk.Checkbutton(
+            frame_cam, text="Grayscale",
+            variable=self.gray_var,
+            command=self._on_gray_toggle
+        ).grid(row=2, column=0, sticky="w", pady=(4,0))
+
+        # Apply to tracking toggle
+        self.track_adj_var = tk.BooleanVar(value=self.app.cam_apply_to_tracking)
+        tk.Checkbutton(
+            frame_cam, text="Apply adjustments to tracking (advanced)",
+            variable=self.track_adj_var,
+            command=self._on_track_adj_toggle
+        ).grid(row=2, column=1, sticky="w", pady=(4,0))
+
+        frame_cam.columnconfigure(1, weight=1)
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -1125,7 +1121,6 @@ class GestureControllerApp:
         self.action_map = load_actions_from_profile_json(path)
         return True
 
-
     def request_collect_gesture(self, name: str):
         name = (name or "").strip()
         if not name:
@@ -1553,7 +1548,57 @@ class GestureControllerApp:
         """Call when the camera window is destroyed so trackbars are recreated next time."""
         self._trackbars_created = False
 
+    def _get_window_inner_size(self, win_name: str):
+            """
+            Returns (w, h) of the drawable area for an OpenCV window.
+            Requires OpenCV that supports getWindowImageRect (most 4.x builds do).
+            """
+            try:
+                x, y, w, h = cv2.getWindowImageRect(win_name)
+                if w > 0 and h > 0:
+                    return w, h
+            except Exception:
+                pass
+            return None
+
+    def _letterbox_to_window(self, frame_bgr, win_w: int, win_h: int):
+        """
+        Resize + pad frame to exactly (win_w, win_h) while preserving aspect ratio.
+        """
+        fh, fw = frame_bgr.shape[:2]
+        if fw <= 0 or fh <= 0 or win_w <= 0 or win_h <= 0:
+            return frame_bgr
+
+        scale = min(win_w / fw, win_h / fh)
+        new_w = max(1, int(fw * scale))
+        new_h = max(1, int(fh * scale))
+
+        resized = cv2.resize(frame_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+        pad_left = (win_w - new_w) // 2
+        pad_right = win_w - new_w - pad_left
+        pad_top = (win_h - new_h) // 2
+        pad_bottom = win_h - new_h - pad_top
+
+        out = cv2.copyMakeBorder(
+            resized,
+            pad_top, pad_bottom, pad_left, pad_right,
+            borderType=cv2.BORDER_CONSTANT,
+            value=(0, 0, 0)
+        )
+        return out
         
+    def _is_cv_window_alive(self, win_name: str) -> bool:
+        """
+        Returns False if OpenCV window was closed (X pressed) or doesn't exist.
+        """
+        try:
+            # On many builds: returns 0 if hidden, 1 if visible, -1 if doesn't exist
+            v = cv2.getWindowProperty(win_name, cv2.WND_PROP_VISIBLE)
+            return v >= 1
+        except Exception:
+            return False
+
     def _apply_camera_adjustments(self, frame_bgr):
         """
         Apply brightness/contrast and optional grayscale for display/tracking.
@@ -2021,6 +2066,8 @@ class GestureControllerApp:
                 if not self._camera_window_open:
                     try:
                         cv2.namedWindow(self._window_name, cv2.WINDOW_NORMAL)
+                        h, w = frame_display.shape[:2]
+                        cv2.resizeWindow(self._window_name, w, h)
                     except Exception as e:
                         print("[CV] window create failed:", e)
                     self._camera_window_open = True
@@ -2030,10 +2077,28 @@ class GestureControllerApp:
                 if self.collect_running:
                     self._draw_collect_overlay(frame_display)
 
-                cv2.imshow(self._window_name, frame_display)
+                win_size = self._get_window_inner_size(self._window_name)
+                if win_size is not None:
+                    win_w, win_h = win_size
+                    frame_to_show = self._letterbox_to_window(frame_display, win_w, win_h)
+                else:
+                    frame_to_show = frame_display
+
+                cv2.imshow(self._window_name, frame_to_show)
 
                 # IMPORTANT: create the real OS window first
                 k = cv2.waitKey(1) & 0xFF
+                # --- Detect user pressed X on the OpenCV window ---
+                if self._camera_window_open and not self._is_cv_window_alive(self._window_name):
+                    print("[CV] Window closed by user (X). Resetting sliders + state.", flush=True)
+
+                    self._camera_window_open = False
+                    self.want_camera_view = False          # optional but recommended
+                    self._cam_window_sized = False
+
+                    self._reset_camera_trackbars_flag()    # <-- THIS makes sliders recreate next time
+                    self._raised_once = False
+                    continue
 
                 # Bring to front AFTER first imshow
                 if not getattr(self, "_raised_once", False):
@@ -2159,6 +2224,17 @@ class GestureControllerApp:
 
         self._camera_window_open = False
 
+class BootstrapApp:
+    def __init__(self):
+        self.running = True
+        self._req_toggle_camera = False
+        self._req_toggle_gui = False
+        self._collect_req_name = None
+        self._delete_req_name = None
+
+    def set_active_profile(self, profile_id: str) -> bool:
+        print("[BOOT] SET_PROFILE received before real app ready:", profile_id, flush=True)
+        return True
 
 if __name__ == "__main__":
     import argparse, traceback
@@ -2168,12 +2244,20 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=50555)
     args = parser.parse_args()
 
+    cmd_server = None
     try:
-        app = GestureControllerApp(enable_gui=True, enable_camera=True)
-        cmd_server = CommandServer(app, port=args.port)
+        # 1) Start server first with a bootstrap app to prevent crashes from server refusal
+        boot = BootstrapApp()
+        cmd_server = CommandServer(boot, port=args.port)
         cmd_server.start()
+        print("[MAIN] Server thread launched EARLY.", flush=True)
 
-        print("[MAIN] Started. Server thread launched.", flush=True)
+        # Start the app
+        app = GestureControllerApp(enable_gui=True, enable_camera=True)
+
+        #Swap the server to use the real app
+        cmd_server.app = app
+        print("[MAIN] Server now bound to real app.", flush=True)
 
         app.run()
 
@@ -2181,6 +2265,7 @@ if __name__ == "__main__":
         print("\n[FATAL] Crashed during startup/run:", e, flush=True)
         traceback.print_exc()
         input("Press Enter to exit...")
+
 
 
 
