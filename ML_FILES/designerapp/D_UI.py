@@ -113,7 +113,7 @@ class MainWindow(QWidget):
         # ---- Setting button ----
         self.setting_button = self.window.findChild(QPushButton, "setting_button")
         assert self.setting_button is not None, "setting_button not found (check objectName in .ui)"
-        self.setting_button.clicked.connect(self.on_setting_clicked)
+        self.setting_button.clicked.connect(self.setting_dialog)
         
         # ---- Library button ----
         self.library_button = self.window.findChild(QPushButton, "library_button")
