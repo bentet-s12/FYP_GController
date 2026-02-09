@@ -3,13 +3,13 @@ import keyboard
 import subprocess
 import sys
 import os
+
 import json
 import threading
 import socket
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtCore import QFile, Qt, QIODevice, QTimer
-from PySide6.QtGui import QPixmap, QIcon, QFont, QKeySequence, QKeyEvent
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QFile, Qt, QIODevice, QTimer, QEvent, QSize, QObject
+from PySide6.QtGui import QPixmap, QIcon, QFont, QKeySequence, QKeyEvent , QShortcut
 from PySide6.QtWidgets import ( 
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
     QStatusBar, QMessageBox, QLabel, QPushButton, 
@@ -18,6 +18,10 @@ from PySide6.QtWidgets import (
 )
 from pathlib import Path
 from ProfileManager import ProfileManager
+
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "1"
+os.environ["QT_AUTO_SCREEN_SCALE_FACTOR"] = "1"
+os.environ["QT_SCALE_FACTOR_ROUNDING_POLICY"] = "PassThrough"
 
 BACKEND_HOST = "127.0.0.1"
 BACKEND_PORT = 50555
@@ -43,6 +47,77 @@ KEYMAP_SPECIAL = {
     Qt.Key_Alt: "alt",
     Qt.Key_Meta: "meta",
 }
+KEYSTR_TO_QTKEY = {v: k for k, v in KEYMAP_SPECIAL.items()}
+def _profile_manager_path() -> str:
+    # profileManager.json is beside ProfileManager.py
+    base_dir = os.path.dirname(os.path.abspath(__import__("ProfileManager").__file__))
+    return os.path.join(base_dir, "profileManager.json")
+
+
+DEFAULT_SHORTCUTS = {
+    "cycle_hand_mode": "h",
+    "cycle_mouse_mode": "m",
+    "toggle_camera": "c",
+    "toggle_vectors": "v",
+    "reload_profile": "r",
+    "quit": "q",
+}
+
+
+def load_profile_manager_json() -> dict:
+    path = _profile_manager_path()
+    if not os.path.exists(path):
+        return {"profileNames": ["Default"], "shortcuts": dict(DEFAULT_SHORTCUTS)}
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+
+    if "profileNames" not in data or not isinstance(data["profileNames"], list):
+        data["profileNames"] = ["Default"]
+
+    sc = data.get("shortcuts")
+    if not isinstance(sc, dict):
+        sc = {}
+
+    merged = dict(DEFAULT_SHORTCUTS)
+    for k, v in sc.items():
+        if isinstance(k, str) and isinstance(v, str) and v.strip():
+            merged[k] = v.strip().lower()
+
+    data["shortcuts"] = merged
+    return data
+
+
+def save_profile_manager_json(data: dict) -> bool:
+    path = _profile_manager_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        return True
+    except Exception as e:
+        print("[UI] Failed saving profileManager.json:", e)
+        return False
+
+
+def set_shortcut_in_profile_manager(action_name: str, key_str: str | None) -> bool:
+    data = load_profile_manager_json()
+
+    if "shortcuts" not in data or not isinstance(data["shortcuts"], dict):
+        data["shortcuts"] = dict(DEFAULT_SHORTCUTS)
+
+    if not key_str or not str(key_str).strip():
+        # Treat NULL/empty as disabled (no binding)
+        data["shortcuts"][action_name] = ""
+    else:
+        data["shortcuts"][action_name] = str(key_str).strip().lower()
+
+    return save_profile_manager_json(data)
+
 
 def backend_is_running(host=BACKEND_HOST, port=BACKEND_PORT, timeout=1.0) -> bool:
     try:
@@ -82,7 +157,53 @@ def keyevent_to_string(event) -> str | None:
     # fallback
     return f"key_{int(k)}"
 
+class AppShortcutFilter(QObject):
+    """
+    Application-wide shortcut handler.
+    Works across ALL windows/dialogs in your app immediately.
+    """
+    def __init__(self, owner):
+        super().__init__(owner)
+        self.owner = owner
+        self.shortcuts = {}   # action_name -> key_str (e.g. "h", "space", "esc")
+        self.callbacks = {}   # action_name -> callable
 
+    def set_shortcuts(self, shortcuts: dict):
+        # normalize
+        out = {}
+        for k, v in (shortcuts or {}).items():
+            if isinstance(k, str):
+                out[k] = (v or "").strip().lower()
+        self.shortcuts = out
+
+    def set_callbacks(self, callbacks: dict):
+        self.callbacks = dict(callbacks or {})
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.KeyPress:
+            return False
+
+        # If a modal key-capture dialog is open, do NOT trigger shortcuts
+        modal = QApplication.activeModalWidget()
+        if isinstance(modal, KeyCaptureDialog):
+            return False
+
+        key_str = keyevent_to_string(event)  # uses your existing function
+        if not key_str:
+            return False
+
+        key_str = key_str.strip().lower()
+
+        # find matching action
+        for action_name, bound in self.shortcuts.items():
+            if bound and bound == key_str:
+                cb = self.callbacks.get(action_name)
+                if cb:
+                    cb()
+                    return True  # consume so it doesn't type into a textbox etc.
+
+        return False
+    
 class KeyCaptureDialog(QDialog):
     """
     Modal dialog:
@@ -157,7 +278,20 @@ class MainWindow(QWidget):
             raise RuntimeError(f"Unable to open UI file: {ui_path}")
         loader = QUiLoader()
         self.window = loader.load(file, self)
+        # --- App-wide shortcut filter (works across all dialogs/windows) ---
+        self._shortcut_filter = AppShortcutFilter(self)
+        QApplication.instance().installEventFilter(self._shortcut_filter)
+
+        # load + apply now
+        self._refresh_shortcuts_runtime()
+        
         file.close()
+        self._shortcuts_suspended = False  # used when capturing a key
+        self._shortcut_map = load_profile_manager_json().get("shortcuts", dict(DEFAULT_SHORTCUTS))
+
+        # install a global event filter so shortcuts work across ALL dialogs/windows
+        QApplication.instance().installEventFilter(self)
+
         if self.window is None:
             raise RuntimeError(loader.errorString())
         try:
@@ -240,7 +374,15 @@ class MainWindow(QWidget):
         self.new_gesture_button.clicked.connect(self.new_gesture_button_function)
         self.tabs.tabBarDoubleClicked.connect(self.tab_rename)
         QTimer.singleShot(800, lambda: self._on_tab_changed(self.tabs.currentIndex()))
-        
+        # ---- shortcut system (single-key safe) ----
+        self._shortcut_map = {}
+        self._reload_shortcut_map()
+
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+
+
         base_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.abspath(os.path.join(base_dir, ".."))
         proto_path = os.path.join(project_root, "prototypeV2.py")
@@ -331,9 +473,6 @@ class MainWindow(QWidget):
                             for act in (current_profile.getActionList() or []):
                                 self.build_action_row(layout, profile_id=profile_id, act=act)
 
-
-
-
         # --- GestureList.json watcher (same polling refresh logic as library dialog) ---
         self._gesturelist_refreshing = False
 
@@ -358,11 +497,229 @@ class MainWindow(QWidget):
 
         QTimer.singleShot(50, self._reload_active_tab_actions)
 
+    def _refresh_shortcuts_runtime(self):
+        pm = load_profile_manager_json()
+        sc = pm.get("shortcuts", DEFAULT_SHORTCUTS)
+        if not isinstance(sc, dict):
+            sc = dict(DEFAULT_SHORTCUTS)
+
+        # callbacks (what each shortcut actually does)
+        callbacks = {
+            "cycle_hand_mode": lambda: print("cycle_hand_mode ->", self.send_cmd("CYCLE_HAND_MODE")),
+            "cycle_mouse_mode": lambda: print("cycle_mouse_mode ->", self.send_cmd("CYCLE_MOUSE_MODE")),
+            "toggle_camera":    lambda: print("toggle_camera ->", self.send_cmd("TOGGLE_CAMERA")),
+            "toggle_vectors":   lambda: print("toggle_vectors ->", self.send_cmd("TOGGLE_VECTORS")),
+            "reload_profile":   lambda: print("reload_profile ->", self.send_cmd("RELOAD_PROFILE")),
+            "quit":             lambda: self.main_power_button(),
+        }
+
+        self._shortcut_filter.set_shortcuts(sc)
+        self._shortcut_filter.set_callbacks(callbacks)
+
+    def eventFilter(self, obj, event):
+        if self._shortcuts_suspended:
+            return super().eventFilter(obj, event)
+
+        if event.type() == QEvent.KeyPress:
+            # convert Qt keypress to your string format ("h", "space", "esc", "left", etc.)
+            s = keyevent_to_string(event)
+            if not s:
+                return super().eventFilter(obj, event)
+
+            # reload latest shortcuts (cheap enough, but you can cache)
+            shortcuts = load_profile_manager_json().get("shortcuts", dict(DEFAULT_SHORTCUTS))
+
+            # match + trigger
+            if s == (shortcuts.get("cycle_hand_mode") or "").strip().lower():
+                print("[UI] cycle hand mode ->", self.send_cmd("CYCLE_HAND_MODE"))
+                return True
+
+            if s == (shortcuts.get("cycle_mouse_mode") or "").strip().lower():
+                print("[UI] cycle mouse mode ->", self.send_cmd("CYCLE_MOUSE_MODE"))
+                return True
+
+            if s == (shortcuts.get("toggle_camera") or "").strip().lower():
+                self.on_camera_clicked()
+                return True
+
+            if s == (shortcuts.get("quit") or "").strip().lower():
+                self.main_power_button()
+                return True
+
+        return super().eventFilter(obj, event)
+
     def _profile_id_for_tab(self, idx: int) -> str:
         if idx == 0:
             return "Default"
         return self.tabs.tabText(idx).strip()
     
+    def _keystr_to_qkeysequence(self, s: str) -> QKeySequence | None:
+        if not s:
+            return None
+        s = s.strip().lower()
+
+        # Named specials using your existing mapping
+        qtkey = KEYSTR_TO_QTKEY.get(s)
+        if qtkey is not None:
+            return QKeySequence(qtkey)
+
+        # Function keys: f1..f35
+        if s.startswith("f") and s[1:].isdigit():
+            n = int(s[1:])
+            if 1 <= n <= 35:
+                return QKeySequence(getattr(Qt, f"Key_F{n}"))
+
+        # Single character (letters/digits/symbols)
+        if len(s) == 1:
+            return QKeySequence(s)
+
+        # Fallback: let Qt parse (supports combos if you add them later)
+        seq = QKeySequence(s)
+        return None if seq.isEmpty() else seq
+
+    def _install_shortcuts(self):
+        """
+        Creates/refreshes QShortcut objects for the UI.
+        Uses ApplicationShortcut so it works even if a child widget has focus.
+        """
+        # remove old ones
+        if hasattr(self, "_qt_shortcuts"):
+            for sc in getattr(self, "_qt_shortcuts", []):
+                try:
+                    sc.setEnabled(False)
+                    sc.deleteLater()
+                except Exception:
+                    pass
+        self._qt_shortcuts = []
+
+        pm = load_profile_manager_json()
+        shortcuts = pm.get("shortcuts", {})
+        if not isinstance(shortcuts, dict):
+            shortcuts = {}
+
+        # apply defaults if missing
+        defaults = self._default_shortcuts()
+        changed = False
+        for k, v in defaults.items():
+            if k not in shortcuts:
+                shortcuts[k] = v
+                changed = True
+        if changed:
+            pm["shortcuts"] = shortcuts
+            save_profile_manager_json(pm)
+
+        def bind(action_name: str, callback):
+            key_str = (shortcuts.get(action_name) or "").strip().lower()
+            seq = self._keystr_to_qkeysequence(key_str)
+            if seq is None:
+                return  # no shortcut set
+            sc = QShortcut(seq, self.window)  # IMPORTANT: attach to the loaded UI root
+            sc.setContext(Qt.ApplicationShortcut)
+            sc.activated.connect(callback)
+            self._qt_shortcuts.append(sc)
+
+        # Bind shortcuts to your existing actions
+        bind("cycle_hand_mode", lambda: self.send_cmd("CYCLE_HAND_MODE"))
+        bind("cycle_mouse_mode", lambda: self.send_cmd("CYCLE_MOUSE_MODE"))
+        bind("toggle_camera", lambda: self.on_camera_clicked())
+        bind("toggle_vectors", lambda: self.send_cmd("TOGGLE_VECTORS"))
+        bind("reload_profile", lambda: self.send_cmd("RELOAD_PROFILE"))
+        bind("quit", lambda: self.main_power_button())
+
+    def _reload_shortcut_map(self):
+        """
+        Loads shortcuts from profileManager.json into a fast lookup map.
+        Uses your existing file format:
+        { "profileNames": [...], "shortcuts": { "cycle_hand_mode": "h", ... } }
+        """
+        pm = load_profile_manager_json()
+        sc = pm.get("shortcuts", {})
+        if not isinstance(sc, dict):
+            sc = {}
+
+        # normalize to lowercase strings
+        self._shortcut_map = {k: (v or "").strip().lower() for k, v in sc.items()}
+
+    def _dispatch_shortcut(self, key_str: str) -> bool:
+        """
+        Returns True if key_str matched and we handled it.
+        """
+        sc = self._shortcut_map
+
+        if key_str and key_str == sc.get("cycle_hand_mode", ""):
+            print("[UI] shortcut: cycle_hand_mode")
+            print(self.send_cmd("CYCLE_HAND_MODE"))
+            return True
+
+        if key_str and key_str == sc.get("cycle_mouse_mode", ""):
+            print("[UI] shortcut: cycle_mouse_mode")
+            print(self.send_cmd("CYCLE_MOUSE_MODE"))
+            return True
+
+        if key_str and key_str == sc.get("toggle_camera", ""):
+            print("[UI] shortcut: toggle_camera")
+            self.on_camera_clicked()
+            return True
+
+        if key_str and key_str == sc.get("quit", ""):
+            print("[UI] shortcut: quit")
+            self.main_power_button()
+            return True
+
+        return False
+    def _sync_mode_dropdowns(self, hand_mode_options: QComboBox, mouse_mode_options: QComboBox):
+        resp = self.send_cmd("GET_MODES")
+        # expecting: "OK <hand> <mouse>"
+        parts = resp.split()
+        if len(parts) < 3 or parts[0] != "OK":
+            print("[UI] GET_MODES failed:", resp)
+            return
+
+        hand = parts[1].strip().lower()
+        mouse = parts[2].strip().upper()
+
+        backend_to_ui_hand = {
+            "right": "Right pointer",
+            "left": "Left pointer",
+            "auto": "Auto",
+            "multi_keyboard": "MultiKB",
+            "multikb": "MultiKB",  # if you ever used this name
+        }
+        backend_to_ui_mouse = {
+            "DISABLED": "Disabled",
+            "CAMERA": "Camera",
+            "CURSOR": "Cursor",
+        }
+
+        # Block signals so setting current text doesn't trigger _apply_* immediately
+        hb = hand_mode_options.blockSignals(True)
+        mb = mouse_mode_options.blockSignals(True)
+
+        hand_mode_options.setCurrentText(backend_to_ui_hand.get(hand, "MultiKB"))
+        mouse_mode_options.setCurrentText(backend_to_ui_mouse.get(mouse, "Disabled"))
+
+        hand_mode_options.blockSignals(hb)
+        mouse_mode_options.blockSignals(mb)
+
+    def eventFilter(self, obj, event):
+        # Don’t steal keys while KeyCaptureDialog is open
+        mw = QApplication.activeModalWidget()
+        if isinstance(mw, KeyCaptureDialog):
+            return super().eventFilter(obj, event)
+
+        if event.type() == QEvent.KeyPress:
+            # Convert Qt event to your string form ("h", "space", "esc", "left", etc.)
+            key_str = keyevent_to_string(event)
+
+            if key_str:
+                handled = self._dispatch_shortcut(key_str)
+                if handled:
+                    event.accept()
+                    return True  # stop propagation so it doesn't type into textboxes
+
+        return super().eventFilter(obj, event)
+
+
     def setting_dialog(self):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         reload_path = os.path.join(BASE_DIR, "resource", "Synchronize-Warning--Streamline-Core.png")
@@ -371,50 +728,24 @@ class MainWindow(QWidget):
         grey_scale_path = os.path.join(BASE_DIR, "resource", "Humidity-None--Streamline-Core.png")
         instruction_path = os.path.join(BASE_DIR, "resource", "Chat-Bubble-Square-Question--Streamline-Core.png")
         
-        def commit_change():
-            old_id = action_id_ref["id"]
-            new_id = gesture_edit.text().strip()
-
-            self.save_action_edit(
-                profile_id=profile_id,
-                action_name=old_id,                          # stable lookup (current id)
-                new_gname=action_box.currentText().strip(),   # writes to G_name
-                new_key=key_btn.text().strip() if key_btn.text().strip().lower() != "set key" else "",
-                new_input_type=input_type_box.currentText(),
-                new_name=new_id                               # writes to name
-            )
-
-            # if rename succeeded logically, update our local id so future edits & delete work
-            if new_id and new_id != old_id:
-                action_id_ref["id"] = new_id
-        
-        def _set_mouse_text(button, val: str | None):
-            if val is None or str(val).strip() == "":
-                button.setText("Set Key")
-            else:
-                button.setText(str(val).strip())
-                
-        def on_key_button_clicked(button):
+        def on_shortcut_button_clicked(button: QPushButton, shortcut_name: str):
             dlg = KeyCaptureDialog(self)
             if dlg.exec() != QDialog.Accepted:
                 return
 
-            # captured_key meanings:
-            # None  -> cancelled
-            # ""    -> NULL
-            # "a"   -> real key
             val = dlg.captured_key
-
             if val is None:
                 return
 
             if val == "":
-                _set_mouse_text(button, "NULL")
+                button.setText("NULL")
+                set_shortcut_in_profile_manager(shortcut_name, "")
             else:
-                _set_mouse_text(button, val)
+                button.setText(val)
+                set_shortcut_in_profile_manager(shortcut_name, val)
 
-            commit_change()
-        
+            self._refresh_shortcuts_runtime()
+
         
         dialog = QDialog(self)
         dialog.setWindowTitle("Settings")
@@ -469,7 +800,7 @@ class MainWindow(QWidget):
             "Auto",
             "MultiKB"
         ])
-                
+
         for i in range(hand_mode_options.count()):
             hand_mode_options.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
             
@@ -488,8 +819,7 @@ class MainWindow(QWidget):
         
         hand_mode_cycle_input = QPushButton(hand_mode_cycle_setting)
         hand_mode_cycle_input.setGeometry(320,25,110,30)
-        hand_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5; font-size: 12px;")
-        hand_mode_cycle_input.clicked.connect(lambda: on_key_button_clicked(hand_mode_cycle_input))    
+        hand_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5; font-size: 12px;")  
         
         mouse_mode_setting = QWidget()
         mouse_mode_setting.setFixedHeight(80)
@@ -523,7 +853,7 @@ class MainWindow(QWidget):
         mouse_mode_cycle_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
         dialog_scroll_layout.addWidget(mouse_mode_cycle_setting)
         
-        mouse_mode_cycle_label = QLabel("Hand mode cycle key:", mouse_mode_cycle_setting)
+        mouse_mode_cycle_label = QLabel("Mouse mode cycle key:", mouse_mode_cycle_setting)
         mouse_mode_cycle_label.setGeometry(20,20,230, 40)
         mouse_mode_cycle_label.setStyleSheet("color: #e0dde5; background: transparent;")
         f = mouse_mode_cycle_label.font()
@@ -533,9 +863,19 @@ class MainWindow(QWidget):
         mouse_mode_cycle_input = QPushButton(mouse_mode_cycle_setting)
         mouse_mode_cycle_input.setGeometry(320,25,110,30)
         mouse_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5; font-size: 12px;")
-                
-        mouse_mode_cycle_input.clicked.connect(lambda: on_key_button_clicked(mouse_mode_cycle_input))
             
+        # set initial text from profileManager.json
+        pm = load_profile_manager_json()
+        shortcuts = pm.get("shortcuts", {})
+        hand_mode_cycle_input.setText(shortcuts.get("cycle_hand_mode", "p"))
+        mouse_mode_cycle_input.setText(shortcuts.get("cycle_mouse_mode", "m"))
+
+        hand_mode_cycle_input.clicked.connect(lambda: on_shortcut_button_clicked(hand_mode_cycle_input, "cycle_hand_mode"))
+        mouse_mode_cycle_input.clicked.connect(lambda: on_shortcut_button_clicked(mouse_mode_cycle_input, "cycle_mouse_mode"))
+        sc = pm.get("shortcuts", DEFAULT_SHORTCUTS)
+
+        hand_mode_cycle_input.setText(sc.get("cycle_hand_mode", "h"))
+        mouse_mode_cycle_input.setText(sc.get("cycle_mouse_mode", "m"))
         
         hand_vectors_setting = QWidget()
         hand_vectors_setting.setFixedHeight(80)
@@ -562,8 +902,74 @@ class MainWindow(QWidget):
                 
         for i in range(hand_vectors_options.count()):
             hand_vectors_options.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
-            
-        
+
+        def _sync_modes_from_backend():
+            # --- Hand mode ---
+            resp = self.send_cmd("GET_HAND_MODE")
+            # resp like: "OK multi_keyboard"
+            if resp.startswith("OK"):
+                mode = resp.split(maxsplit=1)[1].strip() if len(resp.split()) > 1 else ""
+                backend_to_ui = {
+                    "right": "Right pointer",
+                    "left": "Left pointer",
+                    "auto": "Auto",
+                    "multi_keyboard": "MultiKB",
+                }
+                ui_txt = backend_to_ui.get(mode, "MultiKB")
+                hand_mode_options.blockSignals(True)
+                hand_mode_options.setCurrentText(ui_txt)
+                hand_mode_options.blockSignals(False)
+
+            # --- Mouse mode ---
+            resp = self.send_cmd("GET_MOUSE_MODE")
+            # resp like: "OK DISABLED"
+            if resp.startswith("OK"):
+                mode = resp.split(maxsplit=1)[1].strip() if len(resp.split()) > 1 else ""
+                backend_to_ui = {
+                    "DISABLED": "Disabled",
+                    "CAMERA": "Camera",
+                    "CURSOR": "Cursor",
+                }
+                ui_txt = backend_to_ui.get(mode, "Disabled")
+                mouse_mode_options.blockSignals(True)
+                mouse_mode_options.setCurrentText(ui_txt)
+                mouse_mode_options.blockSignals(False)
+
+        # call once before showing
+        _sync_modes_from_backend()
+
+        def _apply_hand_mode():
+            txt = hand_mode_options.currentText().strip()
+            # UI -> backend values
+            ui_to_backend = {
+                "Right pointer": "right",
+                "Left pointer": "left",
+                "Auto": "auto",
+                "MultiKB": "multi_keyboard",
+            }
+            mode = ui_to_backend.get(txt, "auto")
+            print("[UI] set hand mode ->", mode, self.send_cmd(f"SET_HAND_MODE {mode}"))
+
+        def _apply_mouse_mode():
+            txt = mouse_mode_options.currentText().strip()
+            ui_to_backend = {
+                "Disabled": "DISABLED",
+                "Camera": "CAMERA",
+                "Cursor": "CURSOR",
+            }
+            mode = ui_to_backend.get(txt, "DISABLED")
+            print("[UI] set mouse mode ->", mode, self.send_cmd(f"SET_MOUSE_MODE {mode}"))
+
+        def _apply_vectors():
+            txt = hand_vectors_options.currentText().strip()
+            mode = "on" if txt.lower() == "on" else "off"
+            print("[UI] set vectors ->", mode, self.send_cmd(f"SET_VECTORS {mode}"))
+
+        self._sync_mode_dropdowns(hand_mode_options, mouse_mode_options)
+        hand_mode_options.currentTextChanged.connect(lambda _: _apply_hand_mode())
+        mouse_mode_options.currentTextChanged.connect(lambda _: _apply_mouse_mode())
+        hand_vectors_options.currentTextChanged.connect(lambda _: _apply_vectors())
+
         sensitivity_setting = QWidget()
         sensitivity_setting.setFixedHeight(80)
         sensitivity_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
@@ -694,7 +1100,7 @@ class MainWindow(QWidget):
                                     QPushButton {background: #252438; border: none;}
                                     QPushButton:hover {background: #3c384d;}
                                     """)
-
+        _apply_hand_mode()
         dialog.exec()
 
     # main command sender

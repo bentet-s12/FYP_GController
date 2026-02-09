@@ -914,6 +914,7 @@ class CommandServer(threading.Thread):
                             self.app.running = False
                             self._stop_flag = True
                             conn.sendall(b"OK\n")
+
                         elif data.startswith("CREATE_GESTURE"):
                             parts = data.split(maxsplit=1)
                             if len(parts) < 2 or not parts[1].strip():
@@ -921,6 +922,7 @@ class CommandServer(threading.Thread):
                             else:
                                 self.app._collect_req_name = parts[1].strip()
                                 conn.sendall(b"OK\n")
+
                         elif data.startswith("DELETE_GESTURE"):
                             parts = data.split(maxsplit=1)
                             if len(parts) < 2 or not parts[1].strip():
@@ -928,6 +930,7 @@ class CommandServer(threading.Thread):
                             else:
                                 self.app._delete_req_name = parts[1].strip()
                                 conn.sendall(b"OK\n")
+
                         elif data.startswith("SET_PROFILE"):
                             parts = data.split(maxsplit=1)
                             if len(parts) < 2 or not parts[1].strip():
@@ -935,6 +938,65 @@ class CommandServer(threading.Thread):
                             else:
                                 ok = self.app.set_active_profile(parts[1].strip())
                                 conn.sendall(b"OK\n" if ok else b"ERR Failed\n")
+                                
+                        elif data == "GET_MODES":
+                            hand = getattr(self.app, "hand_mode", "auto")
+                            mouse = getattr(self.app, "mouse_mode", "DISABLED")
+                            conn.sendall(f"OK {hand} {mouse}\n".encode("utf-8"))
+
+                        elif data == "CYCLE_HAND_MODE":
+                            self.app.cycle_hand_mode()
+                            conn.sendall(b"OK\n")
+
+                        elif data == "CYCLE_MOUSE_MODE":
+                            self.app.cycle_mouse_mode()
+                            conn.sendall(b"OK\n")
+
+                        elif data == "TOGGLE_VECTORS":
+                            try:
+                                self.app.toggle_hand_vectors()
+                                conn.sendall(b"OK\n")
+                            except Exception as e:
+                                conn.sendall(f"ERR {e}\n".encode("utf-8", errors="ignore"))
+
+                        elif data == "RELOAD_PROFILE":
+                            try:
+                                self.app.reload_profile_actions()
+                                conn.sendall(b"OK\n")
+                            except Exception as e:
+                                conn.sendall(f"ERR {e}\n".encode("utf-8", errors="ignore"))
+
+                        elif data == "GET_HAND_MODE":
+                            # return something like: right / left / auto / multi_keyboard
+                            conn.sendall((f"OK {self.app.hand_mode}\n").encode("utf-8"))
+
+                        elif data == "GET_MOUSE_MODE":
+                            # return something like: DISABLED / CAMERA / CURSOR
+                            conn.sendall((f"OK {self.app.mouse_mode}\n").encode("utf-8"))
+
+                        elif data.startswith("SET_HAND_MODE"):
+                            parts = data.split(maxsplit=1)
+                            if len(parts) < 2:
+                                conn.sendall(b"ERR Missing hand mode\n")
+                            else:
+                                ok = self.app.set_hand_mode(parts[1].strip())
+                                conn.sendall(b"OK\n" if ok else b"ERR Bad mode\n")
+
+                        elif data.startswith("SET_MOUSE_MODE"):
+                            parts = data.split(maxsplit=1)
+                            if len(parts) < 2:
+                                conn.sendall(b"ERR Missing mouse mode\n")
+                            else:
+                                ok = self.app.set_mouse_mode(parts[1].strip())
+                                conn.sendall(b"OK\n" if ok else b"ERR Bad mode\n")
+
+                        elif data.startswith("SET_VECTORS"):
+                            parts = data.split(maxsplit=1)
+                            if len(parts) < 2:
+                                conn.sendall(b"ERR Missing vectors state\n")
+                            else:
+                                ok = self.app.set_vectors_visible(parts[1].strip())
+                                conn.sendall(b"OK\n" if ok else b"ERR Bad value\n")
                         else:
                             conn.sendall(b"UNKNOWN\n")
 
@@ -1164,10 +1226,35 @@ class GestureControllerApp:
         self.hand_landmarker = vision.HandLandmarker.create_from_options(options)
         self._mp_start_t = time.perf_counter()
 
-    def set_hand_mode(self, mode: str):
-        self.hand_mode = mode
+    def set_hand_mode(self, mode: str) -> bool:
+        mode = (mode or "").strip().lower()
 
-    def set_mouse_mode(self, mode: str):
+        mapping = {
+            "right": "right",
+            "left": "left",
+            "auto": "auto",
+            "multikb": "multi_keyboard",
+            "multi_keyboard": "multi_keyboard",
+        }
+        if mode not in mapping:
+            print("[MODE] Bad hand_mode:", mode, flush=True)
+            return False
+
+        self.hand_mode = mapping[mode]
+        # keep cycle index consistent
+        if self.hand_mode in self.hand_mode_cycle:
+            self._hand_mode_idx = self.hand_mode_cycle.index(self.hand_mode)
+
+        print("[MODE] hand_mode ->", self.hand_mode, flush=True)
+        return True
+
+    def set_mouse_mode(self, mode: str) -> bool:
+        mode = (mode or "").strip().upper()
+
+        if mode not in ("DISABLED", "CAMERA", "CURSOR"):
+            print("[MODE] Bad mouse_mode:", mode, flush=True)
+            return False
+
         self.mouse_mode = mode
         if mode == "DISABLED":
             self._reset_mouse_state()
@@ -1186,6 +1273,19 @@ class GestureControllerApp:
                 self.screen_w = screen_w
                 self.screen_h = screen_h
 
+        print("[MODE] mouse_mode ->", self.mouse_mode, flush=True)
+        return True
+    
+    def set_vectors_visible(self, val: str) -> bool:
+        v = (val or "").strip().lower()
+        if v in ("on", "1", "true", "yes"):
+            self.show_hand_vectors = True
+            return True
+        if v in ("off", "0", "false", "no"):
+            self.show_hand_vectors = False
+            return True
+        return False
+    
     def _hold_token(self, act):
         kt = act.getKeyType() or "Keyboard"
         key = act.getKeyPressed()
@@ -1704,6 +1804,21 @@ class GestureControllerApp:
         self.hand_mode = self.hand_mode_cycle[self._hand_mode_idx]
         print(f"[MODE] Hand mode switched to: {self.hand_mode}")
 
+    def cycle_mouse_mode(self):
+        # keep this order consistent with your UI
+        cycle = ["DISABLED", "CAMERA", "CURSOR"]
+
+        # if current is unknown, reset to first
+        try:
+            idx = cycle.index(self.mouse_mode)
+        except ValueError:
+            idx = 0
+
+        idx = (idx + 1) % len(cycle)
+        self.set_mouse_mode(cycle[idx])
+        print(f"[MODE] Mouse mode switched to: {self.mouse_mode}", flush=True)
+
+
     def enforce_hand_suffix(self, pred_label: str, hand_label: str) -> str:
         """
         Enforce one-hand-only gestures.
@@ -1884,6 +1999,17 @@ class GestureControllerApp:
         while self.running:
 
             # ---- apply pending requests (main thread) ----
+            self._req_cycle_hand_mode = False
+            self._req_cycle_mouse_mode = False
+
+            if self._req_cycle_hand_mode:
+                self._req_cycle_hand_mode = False
+                self.cycle_hand_mode()
+
+            if self._req_cycle_mouse_mode:
+                self._req_cycle_mouse_mode = False
+                self.cycle_mouse_mode()
+
             if self._req_toggle_camera:
                 self._req_toggle_camera = False
                 self.want_camera_view = not self.want_camera_view
