@@ -94,7 +94,8 @@ class KeyCaptureDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Set Key")
         self.setModal(True)
-        self.setFixedSize(360, 180)
+        self.setFixedSize(500, 250)
+        self.setStyleSheet("background: #3c384d")
 
         self.captured_key = None  # str | "" | None
 
@@ -107,6 +108,9 @@ class KeyCaptureDialog(QDialog):
             self
         )
         label.setAlignment(Qt.AlignCenter)
+        font = label.font()
+        font.setPointSize(14)
+        label.setFont(font)
         layout.addWidget(label)
 
         # --- Buttons ---
@@ -115,14 +119,19 @@ class KeyCaptureDialog(QDialog):
         self.null_btn = QPushButton("Set NULL")
         self.null_btn.setToolTip("Remove key binding (null)")
         self.null_btn.clicked.connect(self._set_null)
+        self.null_btn.setStyleSheet("border: 2px solid #e0dde5; border-radius: 8px; font-size: 14px;")
+        self.null_btn.setFixedSize(100,30)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.reject)
-
+        self.cancel_btn.setStyleSheet("border: 2px solid #e0dde5; border-radius: 8px; font-size: 14px;")
+        self.cancel_btn.setFixedSize(100,30)
+        
         btn_row.addStretch(1)
         btn_row.addWidget(self.null_btn)
         btn_row.addWidget(self.cancel_btn)
         btn_row.addStretch(1)
+        btn_row.setSpacing(20)
 
         layout.addLayout(btn_row)
 
@@ -362,6 +371,34 @@ class MainWindow(QWidget):
         grey_scale_path = os.path.join(BASE_DIR, "resource", "Humidity-None--Streamline-Core.png")
         instruction_path = os.path.join(BASE_DIR, "resource", "Chat-Bubble-Square-Question--Streamline-Core.png")
         
+        def _set_mouse_text(button, val: str | None):
+            if val is None or str(val).strip() == "":
+                button.setText("Set Key")
+            else:
+                button.setText(str(val).strip())
+                
+        def on_key_button_clicked(button):
+            dlg = KeyCaptureDialog(self)
+            if dlg.exec() != QDialog.Accepted:
+                return
+
+            # captured_key meanings:
+            # None  -> cancelled
+            # ""    -> NULL
+            # "a"   -> real key
+            val = dlg.captured_key
+
+            if val is None:
+                return
+
+            if val == "":
+                _set_mouse_text(button, "NULL")
+            else:
+                _set_mouse_text(button, val)
+
+            commit_change()
+        
+        
         dialog = QDialog(self)
         dialog.setWindowTitle("Settings")
         dialog.setFixedSize(500, 800)
@@ -432,12 +469,10 @@ class MainWindow(QWidget):
         f.setPointSize(16)
         hand_mode_cycle_label.setFont(f)
         
-        hand_mode_cycle_input = QTextEdit(hand_mode_cycle_setting)
+        hand_mode_cycle_input = QPushButton(hand_mode_cycle_setting)
         hand_mode_cycle_input.setGeometry(320,25,110,30)
-        hand_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5;")
-        hand_mode_cycle_input.setFontPointSize(12)
-        hand_mode_cycle_input.setAlignment(Qt.AlignCenter)
-            
+        hand_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5; font-size: 12px;")
+        hand_mode_cycle_input.clicked.connect(lambda: on_key_button_clicked(hand_mode_cycle_input))    
         
         mouse_mode_setting = QWidget()
         mouse_mode_setting.setFixedHeight(80)
@@ -478,11 +513,11 @@ class MainWindow(QWidget):
         f.setPointSize(16)
         mouse_mode_cycle_label.setFont(f)
         
-        mouse_mode_cycle_input = QTextEdit(mouse_mode_cycle_setting)
+        mouse_mode_cycle_input = QPushButton(mouse_mode_cycle_setting)
         mouse_mode_cycle_input.setGeometry(320,25,110,30)
-        mouse_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5;")
-        mouse_mode_cycle_input.setFontPointSize(12)
-        mouse_mode_cycle_input.setAlignment(Qt.AlignCenter)
+        mouse_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5; font-size: 12px;")
+                
+        mouse_mode_cycle_input.clicked.connect(lambda: on_key_button_clicked(mouse_mode_cycle_input))
             
         
         hand_vectors_setting = QWidget()
