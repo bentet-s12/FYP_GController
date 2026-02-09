@@ -371,6 +371,23 @@ class MainWindow(QWidget):
         grey_scale_path = os.path.join(BASE_DIR, "resource", "Humidity-None--Streamline-Core.png")
         instruction_path = os.path.join(BASE_DIR, "resource", "Chat-Bubble-Square-Question--Streamline-Core.png")
         
+        def commit_change():
+            old_id = action_id_ref["id"]
+            new_id = gesture_edit.text().strip()
+
+            self.save_action_edit(
+                profile_id=profile_id,
+                action_name=old_id,                          # stable lookup (current id)
+                new_gname=action_box.currentText().strip(),   # writes to G_name
+                new_key=key_btn.text().strip() if key_btn.text().strip().lower() != "set key" else "",
+                new_input_type=input_type_box.currentText(),
+                new_name=new_id                               # writes to name
+            )
+
+            # if rename succeeded logically, update our local id so future edits & delete work
+            if new_id and new_id != old_id:
+                action_id_ref["id"] = new_id
+        
         def _set_mouse_text(button, val: str | None):
             if val is None or str(val).strip() == "":
                 button.setText("Set Key")
