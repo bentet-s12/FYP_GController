@@ -450,6 +450,7 @@ class CameraWindow(QWidget):
 
         self.setWindowTitle("Gesture Controller Camera")
         self.setMinimumSize(640, 480)
+        self.setStyleSheet("background: #030013;")
 
         root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
@@ -480,7 +481,7 @@ class CameraWindow(QWidget):
         self.sld_contrast.setRange(0, 350)
         self.sld_contrast.setValue(int(round((float(self.app.cam_contrast) + 0.5) * 100)))
         self.sld_contrast.setStyleSheet("""
-                                            margin-bottom: -6px;
+                                            background: #252438;
                                         """)
         row1.addWidget(self.sld_contrast, stretch=1)
         c.addLayout(row1)
@@ -496,7 +497,7 @@ class CameraWindow(QWidget):
         self.sld_brightness.setRange(0, 200)
         self.sld_brightness.setValue(int(self.app.cam_brightness) + 100)
         self.sld_brightness.setStyleSheet("""
-                                            margin-bottom: -6px;
+                                            background: #252438;
                                         """)
         row2.addWidget(self.sld_brightness, stretch=1)
         c.addLayout(row2)
@@ -507,12 +508,18 @@ class CameraWindow(QWidget):
         self.chk_gray = QCheckBox("Greyscale")
         self.chk_gray.setChecked(bool(self.app.cam_grayscale))
         self.chk_gray.setFont(font)
+        self.chk_gray.setStyleSheet("""
+                                            background: #252438;
+                                        """)
         c.addWidget(self.chk_gray)
 
         # Optional: Apply-to-tracking checkbox (you already have it)
         self.chk_apply_tracking = QCheckBox("Apply adjustments to tracking (advanced)")
         self.chk_apply_tracking.setChecked(bool(self.app.cam_apply_to_tracking))
         self.chk_apply_tracking.setFont(font)
+        self.chk_apply_tracking.setStyleSheet("""
+                                            background: #252438;
+                                        """)
         c.addWidget(self.chk_apply_tracking)
 
         # Basic label style (match your palette)
