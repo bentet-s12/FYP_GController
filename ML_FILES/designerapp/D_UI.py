@@ -1496,7 +1496,7 @@ class MainWindow(QWidget):
 
         # ----- Editable NAME field (this edits "name") -----
         gesture_edit = QLineEdit(a_name, sub_bar_frame)
-        gesture_edit.setGeometry(100, 55, 180, 40)
+        gesture_edit.setGeometry(60, 42, 180, 40)
         gesture_edit.setAlignment(Qt.AlignCenter)
         gFont = gesture_edit.font()
         gFont.setPointSize(14)
@@ -1539,6 +1539,7 @@ class MainWindow(QWidget):
                 color: rgb(0, 0, 0);
                 border: none;
                 border-radius: 6px;
+                font-size: 18px;
             }
             QPushButton:hover {
                 background-color: rgb(200, 198, 205);
@@ -1567,7 +1568,7 @@ class MainWindow(QWidget):
         input_type_box = QComboBox(sub_bar_frame)
         input_type_box.setGeometry(625, 55, 150, 40)
         iFont2 = input_type_box.font()
-        iFont2.setPointSize(9)
+        iFont2.setPointSize(12)
         input_type_box.setFont(iFont2)
         input_type_box.setStyleSheet("""
             background-color: rgb(224, 221, 229);
@@ -1618,6 +1619,11 @@ class MainWindow(QWidget):
         gesture_list = self._load_gesture_list()
         action_box.clear()
         action_box.addItems(gesture_list)
+        aFont2 = action_box.font()
+        aFont2.setPointSize(12)
+        action_box.setFont(aFont2)
+        for i in range(action_box.count()):
+            action_box.setItemData(i, Qt.AlignCenter, Qt.TextAlignmentRole)
 
         # select current g_name (G_name)
         idx2 = action_box.findText(g_name)
