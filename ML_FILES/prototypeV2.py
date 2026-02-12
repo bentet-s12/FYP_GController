@@ -2407,25 +2407,6 @@ class GestureControllerApp:
                 g = self._delete_req_name
                 self._delete_req_name = None
                 self._delete_gesture_and_vectors(g)
-            
-
-            # ===== 2) Normal runtime shortcuts (always available) =====
-            if not handled:
-                if k == ord('q'):
-                    self._exit_collect_to_background()
-                    handled = True
-
-                elif k == ord('r'):
-                    self.reload_profile_actions()
-
-                elif k == ord('p'):
-                    self.cycle_hand_mode()   # <-- your 1-hand / 2-hand / auto logic
-
-                elif k == ord('v'):
-                    self.toggle_hand_vectors()
-
-                elif k == ord('c'):
-                    self.toggle_camera_view()
 
         # ---- cleanup ----
         try:

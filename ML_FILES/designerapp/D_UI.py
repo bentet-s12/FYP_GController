@@ -55,12 +55,8 @@ def _profile_manager_path() -> str:
 
 
 DEFAULT_SHORTCUTS = {
-    "cycle_hand_mode": "h",
-    "cycle_mouse_mode": "m",
-    "toggle_camera": "c",
-    "toggle_vectors": "v",
-    "reload_profile": "r",
-    "quit": "q",
+    "cycle_hand_mode": "f1",
+    "cycle_mouse_mode": "f2",
 }
 
 
@@ -102,6 +98,22 @@ def save_profile_manager_json(data: dict) -> bool:
     except Exception as e:
         print("[UI] Failed saving profileManager.json:", e)
         return False
+
+def get_pm_setting(name: str, default=None):
+    pm = load_profile_manager_json()
+    settings = pm.get("settings", {})
+    if not isinstance(settings, dict):
+        settings = {}
+    return settings.get(name, default)
+
+def set_pm_setting(name: str, value):
+    pm = load_profile_manager_json()
+    settings = pm.get("settings", {})
+    if not isinstance(settings, dict):
+        settings = {}
+    settings[name] = value
+    pm["settings"] = settings
+    save_profile_manager_json(pm)
 
 
 def set_shortcut_in_profile_manager(action_name: str, key_str: str | None) -> bool:
@@ -406,9 +418,18 @@ class MainWindow(QWidget):
 
         QTimer.singleShot(300, _boot_set_profile)
 
+        v = get_pm_setting("sensitivity", 50)
+        self.send_cmd(f"SET_SENS {int(v)}")
+
         
         self.BASE_DIR = Path(__file__).parent
         self.PARENT_DIR = self.BASE_DIR.parent
+        # ---- profile json watcher ----
+        self._profiles_snapshot = {}  # filepath -> mtime
+        self._profiles_timer = QTimer(self)
+        self._profiles_timer.timeout.connect(self._tick_profiles_refresh)
+        self._profiles_timer.start(700)
+
         RESOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
         
         # ---- Load existing profiles into tabs (DO NOT use new_tab_button here) ----
@@ -482,6 +503,10 @@ class MainWindow(QWidget):
         except Exception:
             self._gesturelist_last_mtime = None
 
+        self._profiles_snapshot = {}  # filepath -> mtime
+        self._profiles_timer = QTimer(self)
+        self._profiles_timer.timeout.connect(self._tick_profiles_refresh)
+        self._profiles_timer.start(700)  # 0.7s
         
         self._gesturelist_timer = QTimer(self)
         self._gesturelist_timer.timeout.connect(self._tick_gesturelist_refresh)
@@ -496,6 +521,107 @@ class MainWindow(QWidget):
                 break
 
         QTimer.singleShot(50, self._reload_active_tab_actions)
+
+    def _sync_profile_tabs_from_disk(self):
+        """
+        Make tabs match the profile JSON files on disk.
+        Uses your existing tab add/remove handlers.
+        """
+        # Desired profile IDs based on files
+        desired = {"Default"}
+
+        for f in self.PARENT_DIR.glob("profile_*.json"):
+            profile_id = f.stem.replace("profile_", "", 1)
+            if profile_id and profile_id.lower() != "default":
+                desired.add(profile_id)
+
+        # Existing profile IDs from tabs
+        existing = []
+        for i in range(self.tabs.count()):
+            if self.tabs.tabBar().tabData(i) == "add_tab_button":
+                continue
+            pid = self._profile_id_for_tab(i)
+            if pid:
+                existing.append(pid)
+
+        existing_set = set(existing)
+
+        # Add missing tabs
+        for pid in sorted(desired - existing_set):
+            if pid == "Default":
+                continue  # Default is tab 0 already
+            self._add_profile_tab(pid)
+
+        # Remove tabs whose files are gone (skip Default)
+        for i in reversed(range(self.tabs.count())):
+            if self.tabs.tabBar().tabData(i) == "add_tab_button":
+                continue
+            pid = self._profile_id_for_tab(i)
+            if not pid or pid == "Default":
+                continue
+            if pid not in desired:
+                # This uses your real delete logic (removes tab + deletes JSON if needed)
+                # If you DON'T want it to delete files during sync, tell me and I’ll adjust.
+                self.close_tab(i)
+
+    def _tick_profiles_refresh(self):
+        # Files to watch (based on YOUR current path logic)
+        watch_files = []
+
+        # profileManager.json (your loader uses _profile_manager_path())
+        try:
+            pm_path = _profile_manager_path()
+            watch_files.append(pm_path)
+        except Exception:
+            pm_path = None
+
+        # Profiles folder (your profiles live in self.PARENT_DIR)
+        base = self.PARENT_DIR
+        watch_files.append(str(base / "Default.json"))
+        watch_files.extend([str(p) for p in base.glob("profile_*.json")])
+
+        # Build current snapshot
+        current = {}
+        changed = False
+
+        for p in watch_files:
+            try:
+                mt = os.path.getmtime(p) if os.path.exists(p) else None
+            except Exception:
+                mt = None
+            current[p] = mt
+            if self._profiles_snapshot.get(p) != mt:
+                changed = True
+
+        # Detect deleted profile files that were previously present
+        for oldp in list(self._profiles_snapshot.keys()):
+            if oldp not in current:
+                changed = True
+
+        if not changed:
+            return
+
+        self._profiles_snapshot = current
+        print("[UI] Detected profile JSON change -> refreshing tabs/actions/shortcuts")
+
+        # 1) Shortcuts (Settings window also benefits)
+        try:
+            self._install_shortcuts()
+        except Exception as e:
+            print("[UI] _install_shortcuts failed:", e)
+
+        # 2) Sync tabs with disk
+        try:
+            self._sync_profile_tabs_from_disk()
+        except Exception as e:
+            print("[UI] _sync_profile_tabs_from_disk failed:", e)
+
+        # 3) Reload current tab action list + tell backend to reload mapping
+        try:
+            self._reload_active_tab_actions()
+        except Exception as e:
+            print("[UI] _reload_active_tab_actions failed:", e)
+
 
     def _refresh_shortcuts_runtime(self):
         pm = load_profile_manager_json()
@@ -598,7 +724,7 @@ class MainWindow(QWidget):
             shortcuts = {}
 
         # apply defaults if missing
-        defaults = self._default_shortcuts()
+        defaults = dict(DEFAULT_SHORTCUTS)
         changed = False
         for k, v in defaults.items():
             if k not in shortcuts:
@@ -630,7 +756,7 @@ class MainWindow(QWidget):
         """
         Loads shortcuts from profileManager.json into a fast lookup map.
         Uses your existing file format:
-        { "profileNames": [...], "shortcuts": { "cycle_hand_mode": "h", ... } }
+        { "profileNames": [...], "shortcuts": { "cycle_hand_mode": "f1", ... } }
         """
         pm = load_profile_manager_json()
         sc = pm.get("shortcuts", {})
@@ -743,7 +869,7 @@ class MainWindow(QWidget):
             else:
                 button.setText(val)
                 set_shortcut_in_profile_manager(shortcut_name, val)
-
+            self._install_shortcuts()
             self._refresh_shortcuts_runtime()
 
         
@@ -866,16 +992,13 @@ class MainWindow(QWidget):
             
         # set initial text from profileManager.json
         pm = load_profile_manager_json()
-        shortcuts = pm.get("shortcuts", {})
-        hand_mode_cycle_input.setText(shortcuts.get("cycle_hand_mode", "p"))
-        mouse_mode_cycle_input.setText(shortcuts.get("cycle_mouse_mode", "m"))
 
         hand_mode_cycle_input.clicked.connect(lambda: on_shortcut_button_clicked(hand_mode_cycle_input, "cycle_hand_mode"))
         mouse_mode_cycle_input.clicked.connect(lambda: on_shortcut_button_clicked(mouse_mode_cycle_input, "cycle_mouse_mode"))
         sc = pm.get("shortcuts", DEFAULT_SHORTCUTS)
 
-        hand_mode_cycle_input.setText(sc.get("cycle_hand_mode", "h"))
-        mouse_mode_cycle_input.setText(sc.get("cycle_mouse_mode", "m"))
+        hand_mode_cycle_input.setText(sc.get("cycle_hand_mode", "f1"))
+        mouse_mode_cycle_input.setText(sc.get("cycle_mouse_mode", "f2"))
         
         hand_vectors_setting = QWidget()
         hand_vectors_setting.setFixedHeight(80)
@@ -986,8 +1109,20 @@ class MainWindow(QWidget):
         sensitivity_slider.setGeometry(300, 33, 120, 22)
         sensitivity_slider.setMinimum(0)
         sensitivity_slider.setMaximum(100)
-        sensitivity_slider.setValue(50)
-        
+        saved = get_pm_setting("sensitivity", 50)
+        sensitivity_slider.blockSignals(True)
+        sensitivity_slider.setValue(int(saved))
+        sensitivity_slider.blockSignals(False)
+        def on_sens_changed(v: int):
+            set_pm_setting("sensitivity", int(v))  # or float(v)/100 if you prefer float storage
+            print("[UI] Saved sensitivity =", v)
+
+            # Optional: tell backend immediately
+            # If backend expects float:
+            # self.send_cmd(f"SET_SENS {v/100:.2f}")
+            self.send_cmd(f"SET_SENS {v}")
+        sensitivity_slider.sliderReleased.connect(lambda: on_sens_changed(sensitivity_slider.value()))
+
         reload_setting = QWidget()
         reload_setting.setFixedHeight(80)
         reload_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")

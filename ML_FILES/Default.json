@@ -2,10 +2,24 @@
     "Profile_ID": "Default",
     "Actions": [
         {
-            "name": "testings",
-            "G_name": "testt",
-            "key_pressed": "t",
+            "name": "lolll",
+            "G_name": "down",
+            "key_pressed": "b",
             "input_type": "Click",
+            "key_type": null
+        },
+        {
+            "name": "zxcvbnm",
+            "G_name": "up",
+            "key_pressed": "n",
+            "input_type": "Hold",
+            "key_type": null
+        },
+        {
+            "name": "new_action_2",
+            "G_name": null,
+            "key_pressed": null,
+            "input_type": null,
             "key_type": null
         }
     ]
