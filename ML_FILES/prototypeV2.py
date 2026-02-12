@@ -18,7 +18,7 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 # --- PySide6 camera window (replaces cv2.imshow + cv2 trackbars) ---
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
-from PySide6.QtGui import QImage, QPixmap, QFont
+from PySide6.QtGui import QImage, QPixmap, QFont, QShortcut , QKeySequence
 from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSlider, QCheckBox, QFrame
 )
@@ -30,6 +30,7 @@ from Actions import Actions  # your pydirectinput-based Actions.py
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(SCRIPT_DIR, "data", "landmarkVectors")
 MODEL_TASK_PATH = os.path.join(SCRIPT_DIR, "data", "models", "hand_landmarker.task")
+PROFILE_MANAGER_PATH = os.path.join(SCRIPT_DIR, "profileManager.json")
 
 # IMPORTANT: this must match your real file name
 PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "Default.json")
@@ -101,6 +102,23 @@ def bring_window_to_front(window_title: str) -> bool:
 
     user32.SetForegroundWindow(hwnd)
     return True
+
+def load_profile_manager_json_backend():
+    try:
+        if not os.path.exists(PROFILE_MANAGER_PATH):
+            return {}
+
+        with open(PROFILE_MANAGER_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            return {}
+
+        return data
+
+    except Exception as e:
+        print("[BACKEND] Failed to load profileManager.json:", e)
+        return {}
 
 
 class MOUSEINPUT(ctypes.Structure):
@@ -1202,6 +1220,7 @@ class GestureControllerApp:
 
         self.camera_qt = CameraWindow(self)
         self.camera_qt.hide()
+        self._install_camera_shortcuts_from_pm()
 
     def _init_camera_and_models(self):
         self.cap = cv2.VideoCapture(0)
@@ -1789,6 +1808,45 @@ class GestureControllerApp:
     def toggle_camera_view(self):
         self.want_camera_view = not self.want_camera_view
 
+    def _install_camera_shortcuts_from_pm(self):
+        from PySide6.QtGui import QShortcut, QKeySequence
+        from PySide6.QtCore import Qt
+
+        if self.camera_qt is None:
+            return
+
+        # Load profileManager.json using existing loader logic
+        pm = load_profile_manager_json_backend()
+        sc_map = pm.get("shortcuts", {}) if isinstance(pm, dict) else {}
+
+        # Clear old shortcuts
+        old = getattr(self, "_camera_shortcuts", None)
+        if old:
+            for s in old:
+                try:
+                    s.setEnabled(False)
+                    s.deleteLater()
+                except Exception:
+                    pass
+
+        self._camera_shortcuts = []
+
+        def bind(action_name: str, callback):
+            key_str = (sc_map.get(action_name) or "").strip()
+            if not key_str:
+                return
+            s = QShortcut(QKeySequence(key_str), self.camera_qt)
+            s.setContext(Qt.ApplicationShortcut)
+            s.activated.connect(callback)
+            self._camera_shortcuts.append(s)
+
+        # Same actions used in main window
+        bind("cycle_hand_mode", self.cycle_hand_mode)
+        bind("cycle_mouse_mode", self.cycle_mouse_mode)
+        bind("toggle_vectors", self.toggle_hand_vectors)
+        bind("toggle_camera", self.toggle_camera_view)
+        bind("reload_profile", self.reload_profile_actions)
+
     def toggle_hand_vectors(self):
         self.show_hand_vectors = not self.show_hand_vectors
 
@@ -2262,7 +2320,7 @@ class GestureControllerApp:
             # ---- PySide6 camera window update ----
             if self.want_camera_view:
                 self._ensure_qt_camera()
-
+                self._install_camera_shortcuts_from_pm()
                 if self.collect_running:
                     self._draw_collect_overlay(frame_display)
 

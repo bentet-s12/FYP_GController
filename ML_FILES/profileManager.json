@@ -4,7 +4,7 @@
         "Default"
     ],
     "shortcuts": {
-        "cycle_hand_mode": "y",
+        "cycle_hand_mode": "h",
         "cycle_mouse_mode": "m",
         "toggle_camera": "c",
         "toggle_vectors": "v",
