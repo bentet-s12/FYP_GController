@@ -229,7 +229,7 @@ class KeyCaptureDialog(QDialog):
         self.setModal(True)
         self.setFixedSize(500, 250)
         self.setStyleSheet("background: #3c384d")
-
+        
         self.captured_key = None  # str | "" | None
 
         layout = QVBoxLayout(self)
@@ -254,12 +254,18 @@ class KeyCaptureDialog(QDialog):
         self.null_btn.clicked.connect(self._set_null)
         self.null_btn.setStyleSheet("border: 2px solid #e0dde5; border-radius: 8px; font-size: 14px;")
         self.null_btn.setFixedSize(100,30)
+        self.null_btn.setFocusPolicy(Qt.NoFocus)
+        self.null_btn.setDefault(False)
+        self.null_btn.setAutoDefault(False)
 
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.clicked.connect(self.reject)
         self.cancel_btn.setStyleSheet("border: 2px solid #e0dde5; border-radius: 8px; font-size: 14px;")
         self.cancel_btn.setFixedSize(100,30)
-        
+        self.cancel_btn.setFocusPolicy(Qt.NoFocus)
+        self.cancel_btn.setDefault(False)
+        self.cancel_btn.setAutoDefault(False)
+
         btn_row.addStretch(1)
         btn_row.addWidget(self.null_btn)
         btn_row.addWidget(self.cancel_btn)
@@ -1212,7 +1218,7 @@ class MainWindow(QWidget):
         grey_scale_box.setChecked(False)
         grey_scale_box.setStyleSheet ("""
                                       QCheckBox::indicator {width: 30px; height: 30px; border: 2px solid #e0dde5;}
-                                      QCheckBox::indicator:checked {background: #3c384d; image: url(ML_FILES/designerapp/resource/Check--Streamline-Core.png)}
+                                      QCheckBox::indicator:checked {background: #3c384d; image: url(src/designerapp/resource/Check--Streamline-Core.png)}
                                       """)
         
         instruction_setting = QWidget()
@@ -1543,9 +1549,9 @@ class MainWindow(QWidget):
         trash_path = os.path.join(BASE_DIR, "resource", "Recycle-Bin-2--Streamline-Core.png")
 
         # ---- locate GestureList.json ----
-        # If designerapp is under ML_FILES/designerapp, and GestureList.json is under ML_FILES/
-        ML_FILES_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # go up from designerapp
-        gesturelist_path = os.path.join(ML_FILES_DIR, "GestureList.json")
+        # If designerapp is under src/designerapp, and GestureList.json is under src/
+        SRC_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))  # go up from designerapp
+        gesturelist_path = os.path.join(SRC_DIR, "GestureList.json")
 
         print("[UI] GestureList path =", gesturelist_path)
         print("[UI] Exists? =", os.path.exists(gesturelist_path))
@@ -1861,7 +1867,7 @@ class MainWindow(QWidget):
         super().resizeEvent(event)
 
     def _profile_path(self, profile_id: str) -> str:
-        # profiles live in ML_FILES (parent of designerapp)
+        # profiles live in src (parent of designerapp)
         if profile_id == "Default":
             return str(self.PARENT_DIR / "Default.json")
         return str(self.PARENT_DIR / f"profile_{profile_id}.json")
@@ -2002,7 +2008,7 @@ class MainWindow(QWidget):
         print(self.send_cmd("TOGGLE_GUI"))
 
     def _gesturelist_path(self) -> str:
-        # GestureList.json is in ML_FILES (parent of designerapp)
+        # GestureList.json is in src (parent of designerapp)
         return os.path.join(str(self.PARENT_DIR), "GestureList.json")
 
     def _load_gesture_list(self) -> list[str]:
@@ -2428,6 +2434,9 @@ class KeyCaptureBox(QTextEdit):
 
     def keyPressEvent(self, event):
         if self.capturing:
+            self.setFocusPolicy(Qt.StrongFocus)
+            self.setFocus()
+
             key = event.key()
             text = event.text()
 
@@ -2448,12 +2457,23 @@ class KeyCaptureBox(QTextEdit):
                 key_name = "tab"
             elif key == Qt.Key_Escape:
                 key_name = "esc"
+            elif key == Qt.Key_Up:
+                key_name = "up"
+            elif key == Qt.Key_Down:
+                key_name = "down"
+            elif key == Qt.Key_Left:
+                key_name = "left"
+            elif key == Qt.Key_Right:
+                key_name = "right"
+            elif key == Qt.Key_Delete:
+                key_name = "delete"
             else:
                 # letters/numbers/symbols
                 key_name = text.lower().strip() if text else f"key_{key}"
 
             self.setText(key_name)
             self.capturing = False
+            event.accept()
             return
 
         super().keyPressEvent(event)

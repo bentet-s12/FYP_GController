@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSlider, QCheckBox, QFrame
 )
 
-
 from Actions import Actions  # your pydirectinput-based Actions.py
 # ================== PATH CONFIG ==================
 
@@ -36,7 +35,9 @@ PROFILE_MANAGER_PATH = os.path.join(SCRIPT_DIR, "profileManager.json")
 PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "Default.json")
 GESTURELIST_JSON_PATH = os.path.join(SCRIPT_DIR, "GestureList.json")
 STRICT_GESTURELIST = True  # if True: ignore profile mappings whose gesture is not in GestureList.json
-
+X_PATH = os.path.join(SCRIPT_DIR, "X.npy")
+Y_PATH = os.path.join(SCRIPT_DIR, "y.npy")
+CLASSES_PATH = os.path.join(SCRIPT_DIR, "class_names.npy")
 # ================== CONSTANTS ====================
 
 K_NEIGHBORS = 3
@@ -54,14 +55,10 @@ SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_SHOWWINDOW = 0x0040
 
-
-
-# ================== CURSOR / CAMERA MOUSE ==================
 INPUT_MOUSE = 0
 MOUSEEVENTF_MOVE = 0x0001
 
-# Win32 SendInput for relative mouse movement (CAMERA mode)
-user32 = ctypes.WinDLL("user32", use_last_error=True)
+
 
 SW_RESTORE = 9
 HWND_TOPMOST = -1
@@ -71,6 +68,8 @@ SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_SHOWWINDOW = 0x0040
 
+# Win32 SendInput for relative mouse movement (CAMERA mode)
+user32 = ctypes.WinDLL("user32", use_last_error=True)
 user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
 user32.FindWindowW.restype = wintypes.HWND
 
@@ -120,6 +119,73 @@ def load_profile_manager_json_backend():
         print("[BACKEND] Failed to load profileManager.json:", e)
         return {}
 
+def load_gesture_list(path=GESTURELIST_JSON_PATH):
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+def save_gesture_list(gestures, path=GESTURELIST_JSON_PATH):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(list(gestures), f, indent=4)
+
+def gesturelist_add(name: str):
+    g = load_gesture_list()
+    if name not in g:
+        g.append(name)
+        save_gesture_list(g)
+
+def gesturelist_remove(name: str):
+    g = load_gesture_list()
+    if name in g:
+        g.remove(name)
+        save_gesture_list(g)
+
+def gesturelist_rename(old: str, new: str):
+    g = load_gesture_list()
+    if old in g:
+        g = [new if x == old else x for x in g]
+        g = list(dict.fromkeys(g))  # remove duplicates safely
+        save_gesture_list(g)
+
+def dataset_load():
+    if not (os.path.exists(X_PATH) and os.path.exists(Y_PATH) and os.path.exists(CLASSES_PATH)):
+        return None, None, None
+    X = np.load(X_PATH, allow_pickle=False)
+    y = np.load(Y_PATH, allow_pickle=False)
+    classes = np.load(CLASSES_PATH, allow_pickle=True).tolist()
+    return X, y, classes
+
+def dataset_save(X, y, classes):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    np.save(X_PATH, X)
+    np.save(Y_PATH, y)
+    np.save(CLASSES_PATH, np.array(classes, dtype=object))
+
+def dataset_delete_label(label: str):
+    X, y, classes = dataset_load()
+    if X is None:
+        return False
+    mask = (y != label)
+    X2 = X[mask]
+    y2 = y[mask]
+    classes2 = [c for c in classes if c != label]
+    dataset_save(X2, y2, classes2)
+    return True
+
+def dataset_rename_label(old: str, new: str):
+    X, y, classes = dataset_load()
+    if X is None:
+        return False
+    y2 = np.array([new if v == old else v for v in y], dtype=y.dtype)
+    classes2 = [new if c == old else c for c in classes]
+    dataset_save(X, y2, classes2)
+    return True
+
 
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [("dx", wintypes.LONG),
@@ -148,11 +214,6 @@ def normalize_handedness(label: str, flipped_for_detection: bool) -> str:
         return "Right" if label == "Left" else "Left"
     return label
 
-
-
-# =================================================
-#   KNN CLASSIFIER
-# =================================================
 
 class KNNGestureClassifier:
     def __init__(self):
@@ -282,10 +343,6 @@ class KNNGestureClassifier:
         return pred_label, top_conf
 
 
-# =================================================
-#   FEATURE VECTOR (42D)
-# =================================================
-
 def landmarks_to_feature_vector(hand_lm, mirror=False):
     """
     Supports BOTH:
@@ -312,51 +369,8 @@ def landmarks_to_feature_vector(hand_lm, mirror=False):
 
     return coords.reshape(-1)
 
-# ===================== NEW PROFILE LOADER (ACTIVE) =====================
-
-def load_gesture_list(gesturelist_path: str) -> list[str]:
-    """
-    Loads GestureList.json (a JSON list of gesture names).
-    Returns a normalized unique list (order preserved).
-    """
-    if not os.path.exists(gesturelist_path):
-        print(f"[GestureList] Missing: {gesturelist_path} (treating as empty)")
-        return []
-    try:
-        with open(gesturelist_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, list):
-            print("[GestureList] Invalid format (must be a JSON list). Treating as empty.")
-            return []
-        out = []
-        seen = set()
-        for g in data:
-            if not isinstance(g, str):
-                continue
-            g2 = g.strip()
-            if not g2 or g2 in seen:
-                continue
-            out.append(g2)
-            seen.add(g2)
-        return out
-    except Exception as e:
-        print("[GestureList] Failed to load:", e)
-        return []
-
 
 def load_actions_from_profile_json(profile_path: str):
-    """
-    NEW LOGIC:
-      - GestureList.json is the source of truth for valid gestures.
-      - profile_<id>.json contains mappings keyed by 'gesture' (preferred), with legacy fallback to 'name'.
-      - action_map is built as dict[gesture -> Actions].
-
-    Expected mapping entry (new schema):
-      {"gesture": "thumbs_up", "key_pressed": "space", "input_type": "Click", "key_type": "Keyboard"}
-
-    Legacy fallback:
-      - If 'gesture' is missing, we treat 'name' as the gesture label.
-    """
     action_map = {}
 
     gesture_list = load_gesture_list(GESTURELIST_JSON_PATH)
@@ -462,8 +476,8 @@ class CameraWindow(QWidget):
     """
     Shows frames with preserved aspect ratio (letterbox) + sliders/checkbox.
     """
-    def __init__(self, app_ref):
-        super().__init__()
+    def __init__(self, app_ref, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.app = app_ref  # GestureControllerApp instance (read/write cam params)
 
         self.setWindowTitle("Gesture Controller Camera")
@@ -555,6 +569,8 @@ class CameraWindow(QWidget):
         self.chk_apply_tracking.toggled.connect(self._on_apply_tracking)
 
         self._last_pixmap = None
+        self._last_key = None
+        self.setFocusPolicy(Qt.StrongFocus)
 
     def _on_contrast(self, v: int):
         self.app.cam_contrast = (float(v) / 100.0) - 0.50
@@ -599,6 +615,22 @@ class CameraWindow(QWidget):
             target = self.video.size()
             scaled = self._last_pixmap.scaled(target, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.video.setPixmap(scaled)
+
+    def keyPressEvent(self, event):
+        # store ASCII-ish keys: Space/Q/S/D/N etc.
+        k = event.key()
+        if k == Qt.Key_Space:
+            self._last_key = 32
+        else:
+            txt = (event.text() or "")
+            if txt:
+                self._last_key = ord(txt.lower())
+        event.accept()
+
+    def pop_last_key(self):
+        k = self._last_key
+        self._last_key = None
+        return k
 
 
 # =================================================
@@ -1379,7 +1411,7 @@ class GestureControllerApp:
             path = os.path.join(SCRIPT_DIR, "Default.json")
 
         elif pid.lower().endswith(".json"):
-            # treat as direct filename under ML_FILES
+            # treat as direct filename under src
             path = os.path.join(SCRIPT_DIR, pid)
 
         elif pid.startswith("profile_"):
@@ -1542,11 +1574,7 @@ class GestureControllerApp:
 
         try:
             # 1) Register gesture name
-            gestures = load_gesture_list(GESTURELIST_JSON_PATH)
-            if self.collect_name not in gestures:
-                gestures.append(self.collect_name)
-                with open(GESTURELIST_JSON_PATH, "w", encoding="utf-8") as f:
-                    json.dump(gestures, f, indent=4)
+            gesturelist_add(self.collect_name)
 
             # 2) Merge tmp_collect → main dataset
             from custom_manager import PathConfig, CombinedDatasetManager
@@ -1995,57 +2023,29 @@ class GestureControllerApp:
         print("[DELETE] Removing gesture:", gesture_name)
 
         # 1) Remove from GestureList.json
-        gestures = load_gesture_list(GESTURELIST_JSON_PATH)
-        gestures2 = [g for g in gestures if g != gesture_name]
-        try:
-            with open(GESTURELIST_JSON_PATH, "w", encoding="utf-8") as f:
-                json.dump(gestures2, f, indent=4)
-        except Exception as e:
-            print("[DELETE] Failed writing GestureList:", e)
+        gesturelist_remove(gesture_name)
 
-        # 2) Remove from dataset files (X.npy / y.npy / class_names.npy)
-        X_path = os.path.join(DATA_DIR, "X.npy")
-        y_path = os.path.join(DATA_DIR, "y.npy")
-        c_path = os.path.join(DATA_DIR, "class_names.npy")
-
-        if not (os.path.exists(X_path) and os.path.exists(y_path) and os.path.exists(c_path)):
-            print("[DELETE] Dataset files missing; nothing to filter.")
+        # 2) Remove from dataset
+        ok = dataset_delete_label(gesture_name)
+        if ok:
+            print("[DELETE] Dataset updated for:", gesture_name)
         else:
-            try:
-                X = np.load(X_path, allow_pickle=True)
-                y = np.load(y_path, allow_pickle=True)
+            print("[DELETE] Dataset not found or no changes needed.")
 
-                # normalize y to strings like your loader does
-                y = np.array([str(v) for v in y], dtype=object)
-
-                keep = np.array([lbl != gesture_name for lbl in y], dtype=bool)
-                X2 = X[keep]
-                y2 = y[keep]
-
-                # rebuild class_names from remaining y
-                class_names2 = sorted(set(list(y2)))
-
-                np.save(X_path, X2)
-                np.save(y_path, y2)
-                np.save(c_path, np.array(class_names2, dtype=object))
-
-                print(f"[DELETE] Filtered dataset: {len(X)} -> {len(X2)} samples; classes now={class_names2}")
-
-            except Exception as e:
-                print("[DELETE] Failed filtering dataset:", e)
-
-        # 3) Also delete any per-gesture folder if your pipeline created it
+        # 3) Delete per-gesture vector folder (if exists)
         vec_folder = os.path.join(DATA_DIR, gesture_name)
         if os.path.isdir(vec_folder):
             shutil.rmtree(vec_folder, ignore_errors=True)
             print("[DELETE] Removed folder:", vec_folder)
 
-        # 4) Reload classifier so deletion takes effect immediately
+        # 4) Reload classifier
         try:
             if self.classifier:
                 self.classifier.load_dataset()
+                print("[DELETE] Classifier reloaded.")
         except Exception as e:
             print("[DELETE] Reload classifier failed:", e)
+
 
     # ---------- main loop ----------
 
@@ -2346,7 +2346,10 @@ class GestureControllerApp:
 
             # IMPORTANT: no cv2.waitKey anymore
             k = 255
-
+            if self.camera_qt is not None:
+                kk = self.camera_qt.pop_last_key()
+                if kk is not None:
+                    k = kk
 
 
             # ---------- KEY HANDLING (SAFE & EXTENDABLE) ----------

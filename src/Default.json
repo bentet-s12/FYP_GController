@@ -11,15 +11,15 @@
         {
             "name": "zxcvbnm",
             "G_name": "up",
-            "key_pressed": "n",
+            "key_pressed": "space",
             "input_type": "Hold",
             "key_type": null
         },
         {
             "name": "new_action_2",
-            "G_name": null,
-            "key_pressed": null,
-            "input_type": null,
+            "G_name": "cross",
+            "key_pressed": "t",
+            "input_type": "Click",
             "key_type": null
         }
     ]
