@@ -35,9 +35,9 @@ PROFILE_MANAGER_PATH = os.path.join(SCRIPT_DIR, "profileManager.json")
 PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "Default.json")
 GESTURELIST_JSON_PATH = os.path.join(SCRIPT_DIR, "GestureList.json")
 STRICT_GESTURELIST = True  # if True: ignore profile mappings whose gesture is not in GestureList.json
-X_PATH = os.path.join(SCRIPT_DIR, "X.npy")
-Y_PATH = os.path.join(SCRIPT_DIR, "y.npy")
-CLASSES_PATH = os.path.join(SCRIPT_DIR, "class_names.npy")
+X_PATH = os.path.join(SCRIPT_DIR, "data", "X.npy")
+Y_PATH = os.path.join(SCRIPT_DIR, "data", "y.npy")
+CLASSES_PATH = os.path.join(SCRIPT_DIR, "data", "class_names.npy")
 # ================== CONSTANTS ====================
 
 K_NEIGHBORS = 3
@@ -166,16 +166,35 @@ def dataset_save(X, y, classes):
     np.save(Y_PATH, y)
     np.save(CLASSES_PATH, np.array(classes, dtype=object))
 
-def dataset_delete_label(label: str):
+def dataset_delete_label(label: str) -> bool:
     X, y, classes = dataset_load()
     if X is None:
+        print("[DELETE] Dataset files missing; nothing to do.")
         return False
-    mask = (y != label)
-    X2 = X[mask]
-    y2 = y[mask]
-    classes2 = [c for c in classes if c != label]
+
+    # normalize y to string labels
+    y = np.array([str(v) for v in y], dtype=object)
+
+    # keep everything NOT matching label
+    keep = (y != label)
+
+    removed = int((~keep).sum())
+    if removed == 0:
+        print("[DELETE] No samples found for:", label)
+        return False
+
+    X2 = X[keep]
+    y2 = y[keep]
+
+    # rebuild class list from remaining labels
+    classes2 = sorted(set(y2.tolist()))
+
+    # overwrite npy files with filtered data (NOT deleting files)
     dataset_save(X2, y2, classes2)
+
+    print(f"[DELETE] Removed {removed} samples for '{label}'. Remaining samples: {len(y2)}")
     return True
+
 
 def dataset_rename_label(old: str, new: str):
     X, y, classes = dataset_load()
@@ -186,6 +205,160 @@ def dataset_rename_label(old: str, new: str):
     dataset_save(X, y2, classes2)
     return True
 
+def landmarks_to_feature_vector(hand_lm, mirror=False):
+    """
+    Supports BOTH:
+      - Solutions: hand_lm.landmark (21 pts)
+      - Tasks:     hand_lm is a list of 21 landmarks (each has .x/.y)
+    """
+    # Tasks gives: list[NormalizedLandmark]
+    if isinstance(hand_lm, list):
+        pts = hand_lm
+    else:
+        # Solutions gives an object with .landmark
+        pts = hand_lm.landmark
+
+    coords = np.array([[p.x, p.y] for p in pts], dtype=np.float32)
+
+    wrist = coords[0].copy()
+    coords = coords - wrist
+
+    scale = np.linalg.norm(coords[9]) + 1e-6
+    coords = coords / scale
+
+    if mirror:
+        coords[:, 0] *= -1.0
+
+    return coords.reshape(-1)
+
+
+def load_actions_from_profile_json(profile_path: str):
+    action_map = {}
+
+    gesture_list = load_gesture_list(GESTURELIST_JSON_PATH)
+    gesture_set = set(gesture_list)
+    if not os.path.exists(profile_path):
+        print(f"[PROFILE] Missing: {profile_path}")
+        return action_map
+
+    try:
+        with open(profile_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        actions = data.get("Actions", [])
+        for a in actions:
+            if not isinstance(a, dict):
+                continue
+
+            gesture = a.get("G_name")  # legacy fallback
+            if not isinstance(gesture, str):
+                continue
+            gesture = gesture.strip()
+
+            # skip empty/default placeholders
+            if not gesture or gesture == "default":
+                continue
+
+            if STRICT_GESTURELIST and gesture_set and (gesture not in gesture_set):
+                continue
+
+            key = a.get("key_pressed")
+            input_type = a.get("input_type")
+            key_type = a.get("key_type")
+
+            if not key or not input_type:
+                continue
+
+            # normalize
+            if isinstance(input_type, str):
+                t = input_type.strip().lower()
+                if t == "click":
+                    input_type = "Click"
+                elif t == "hold":
+                    input_type = "Hold"
+                elif t in ("d_click", "doubleclick", "double_click"):
+                    input_type = "D_Click"
+
+            if isinstance(key_type, str):
+                kt = key_type.strip().lower()
+                if kt == "mouse":
+                    key_type = "Mouse"
+                elif kt == "keyboard":
+                    key_type = "Keyboard"
+            
+            key_type = a.get("key_type")
+            # DEFAULT if missing
+            if not isinstance(key_type, str) or not key_type.strip():
+                key_type = "Keyboard"
+            else:
+                kt = key_type.strip().lower()
+                if kt == "mouse":
+                    key_type = "Mouse"
+                elif kt == "keyboard":
+                    key_type = "Keyboard"
+
+            # Build mapping that can be matched by BOTH:
+            # - gesture binding (G_name)  e.g. "up", "down"
+            # - action name (name)        e.g. "accelerate", "reverse"
+
+            action_name = a.get("name")
+            action_name = action_name.strip() if isinstance(action_name, str) else None
+
+            # gesture variable already exists above (from G_name), but normalize "null"
+            if gesture in ("", "null", "None"):
+                gesture = None
+            if action_name in ("", "null", "None"):
+                action_name = None
+
+            action_obj = Actions(
+                name=action_name or (gesture or "unnamed"),
+                G_name=gesture,
+                key_pressed=key,
+                input_type=input_type,
+                key_type=key_type
+            )
+
+            # Store by gesture binding
+            if gesture:
+                action_map[gesture] = action_obj
+
+            # Store by action name too
+            if action_name:
+                action_map[action_name] = action_obj
+
+
+        print(f"[PROFILE] Loaded {len(action_map)} mappings from {os.path.basename(profile_path)}: {list(action_map.keys())}")
+        return action_map
+
+    except Exception as e:
+        print("[PROFILE] Failed to load:", e)
+        return action_map
+
+def dataset_add_from_folder(label: str, folder: str):
+    files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".npy")]
+    if not files:
+        raise RuntimeError(f"No .npy samples found in {folder}")
+
+    samples = [np.load(p, allow_pickle=False) for p in files]
+    X_new = np.stack(samples, axis=0)
+    y_new = np.array([label] * len(samples), dtype=object)
+
+    X, y, classes = dataset_load()
+    if X is None:
+        X = np.empty((0, X_new.shape[1]), dtype=X_new.dtype)
+        y = np.empty((0,), dtype=object)
+        classes = []
+
+    # normalize y to object strings (consistent)
+    y = np.array([str(v) for v in y], dtype=object)
+
+    X2 = np.vstack([X, X_new])
+    y2 = np.concatenate([y, y_new])
+
+    if label not in classes:
+        classes.append(label)
+
+    dataset_save(X2, y2, classes)
 
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [("dx", wintypes.LONG),
@@ -343,134 +516,7 @@ class KNNGestureClassifier:
         return pred_label, top_conf
 
 
-def landmarks_to_feature_vector(hand_lm, mirror=False):
-    """
-    Supports BOTH:
-      - Solutions: hand_lm.landmark (21 pts)
-      - Tasks:     hand_lm is a list of 21 landmarks (each has .x/.y)
-    """
-    # Tasks gives: list[NormalizedLandmark]
-    if isinstance(hand_lm, list):
-        pts = hand_lm
-    else:
-        # Solutions gives an object with .landmark
-        pts = hand_lm.landmark
 
-    coords = np.array([[p.x, p.y] for p in pts], dtype=np.float32)
-
-    wrist = coords[0].copy()
-    coords = coords - wrist
-
-    scale = np.linalg.norm(coords[9]) + 1e-6
-    coords = coords / scale
-
-    if mirror:
-        coords[:, 0] *= -1.0
-
-    return coords.reshape(-1)
-
-
-def load_actions_from_profile_json(profile_path: str):
-    action_map = {}
-
-    gesture_list = load_gesture_list(GESTURELIST_JSON_PATH)
-    gesture_set = set(gesture_list)
-    if not os.path.exists(profile_path):
-        print(f"[PROFILE] Missing: {profile_path}")
-        return action_map
-
-    try:
-        with open(profile_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        actions = data.get("Actions", [])
-        for a in actions:
-            if not isinstance(a, dict):
-                continue
-
-            gesture = a.get("G_name")  # legacy fallback
-            if not isinstance(gesture, str):
-                continue
-            gesture = gesture.strip()
-
-            # skip empty/default placeholders
-            if not gesture or gesture == "default":
-                continue
-
-            if STRICT_GESTURELIST and gesture_set and (gesture not in gesture_set):
-                continue
-
-            key = a.get("key_pressed")
-            input_type = a.get("input_type")
-            key_type = a.get("key_type")
-
-            if not key or not input_type:
-                continue
-
-            # normalize
-            if isinstance(input_type, str):
-                t = input_type.strip().lower()
-                if t == "click":
-                    input_type = "Click"
-                elif t == "hold":
-                    input_type = "Hold"
-                elif t in ("d_click", "doubleclick", "double_click"):
-                    input_type = "D_Click"
-
-            if isinstance(key_type, str):
-                kt = key_type.strip().lower()
-                if kt == "mouse":
-                    key_type = "Mouse"
-                elif kt == "keyboard":
-                    key_type = "Keyboard"
-            
-            key_type = a.get("key_type")
-            # DEFAULT if missing
-            if not isinstance(key_type, str) or not key_type.strip():
-                key_type = "Keyboard"
-            else:
-                kt = key_type.strip().lower()
-                if kt == "mouse":
-                    key_type = "Mouse"
-                elif kt == "keyboard":
-                    key_type = "Keyboard"
-
-            # Build mapping that can be matched by BOTH:
-            # - gesture binding (G_name)  e.g. "up", "down"
-            # - action name (name)        e.g. "accelerate", "reverse"
-
-            action_name = a.get("name")
-            action_name = action_name.strip() if isinstance(action_name, str) else None
-
-            # gesture variable already exists above (from G_name), but normalize "null"
-            if gesture in ("", "null", "None"):
-                gesture = None
-            if action_name in ("", "null", "None"):
-                action_name = None
-
-            action_obj = Actions(
-                name=action_name or (gesture or "unnamed"),
-                G_name=gesture,
-                key_pressed=key,
-                input_type=input_type,
-                key_type=key_type
-            )
-
-            # Store by gesture binding
-            if gesture:
-                action_map[gesture] = action_obj
-
-            # Store by action name too
-            if action_name:
-                action_map[action_name] = action_obj
-
-
-        print(f"[PROFILE] Loaded {len(action_map)} mappings from {os.path.basename(profile_path)}: {list(action_map.keys())}")
-        return action_map
-
-    except Exception as e:
-        print("[PROFILE] Failed to load:", e)
-        return action_map
 
 class CameraWindow(QWidget):
     """
@@ -1125,7 +1171,7 @@ class GestureControllerApp:
         if self.enable_gui:
             self._start_gui_thread()
 
-        # --- collector mode (like custom_manager) ---
+        # --- collector mode ---
         self.collect_mode = "TWO_HAND"     # "TWO_HAND" or "ONE_HAND"
         self.collect_phase = "LEFT"        # only used in TWO_HAND (LEFT then RIGHT)
         self.collect_target_one = "LEFT"   # only used in ONE_HAND (LEFT/RIGHT)
@@ -1460,7 +1506,7 @@ class GestureControllerApp:
         self.collect_phase = "LEFT"
 
         # default mode
-        self.collect_mode = "TWO_HAND"      # start in TWO_HAND like custom_manager
+        self.collect_mode = "TWO_HAND"      # start in TWO_HAND
         self.collect_target_one = "LEFT"    # used only if ONE_HAND
 
         self.collect_paused = True          # SPACE to start
@@ -1577,10 +1623,7 @@ class GestureControllerApp:
             gesturelist_add(self.collect_name)
 
             # 2) Merge tmp_collect → main dataset
-            from custom_manager import PathConfig, CombinedDatasetManager
-            paths = PathConfig()
-            dataset = CombinedDatasetManager(paths)
-            dataset.add_new_gesture_from_folder(self.collect_name, tmp_folder)
+            dataset_add_from_folder(self.collect_name, tmp_folder)
 
             # 3) Reload classifier
             if self.classifier:

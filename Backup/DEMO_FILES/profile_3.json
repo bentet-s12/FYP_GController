@@ -1,0 +1,15 @@
+{
+    "Profile_ID": "3",
+    "Actions": [
+        {
+            "name": "Shoot",
+            "key_pressed": "LEFT_MOUSE",
+            "input_type": "Click"
+        },
+        {
+            "name": "Aim",
+            "key_pressed": "RIGHT_MOUSE",
+            "input_type": "Hold"
+        }
+    ]
+}
