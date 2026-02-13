@@ -18,7 +18,7 @@ REQUIRED = {
 
 project_root = os.path.dirname(os.path.abspath(__file__))
 src_path = os.path.join(project_root, "src")
-sys.path.insert(0, src_path)
+main_path = os.path.join(src_path, "main.py")
 
 def find_python():
     py = shutil.which("py")
@@ -50,6 +50,5 @@ def ensure_dependencies(python_cmd):
 if __name__ == "__main__":
     py = find_python()
     ensure_dependencies(py)
-
     
-    run()
+    subprocess.run([sys.executable, main_path])
