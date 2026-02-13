@@ -854,10 +854,6 @@ class MainWindow(QWidget):
 
     def setting_dialog(self):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        reload_path = os.path.join(BASE_DIR, "resource", "Synchronize-Warning--Streamline-Core.png")
-        brightness_path = os.path.join(BASE_DIR, "resource", "Brightness-1--Streamline-Core.png")
-        contrast_path = os.path.join(BASE_DIR, "resource", "Image-Saturation--Streamline-Core.png")
-        grey_scale_path = os.path.join(BASE_DIR, "resource", "Humidity-None--Streamline-Core.png")
         instruction_path = os.path.join(BASE_DIR, "resource", "Chat-Bubble-Square-Question--Streamline-Core.png")
         
         def on_shortcut_button_clicked(button: QPushButton, shortcut_name: str):
