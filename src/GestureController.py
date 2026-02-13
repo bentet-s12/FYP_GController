@@ -3,7 +3,6 @@ import os
 import subprocess
 import sys
 import shutil
-from designerapp.D_UI import run
 REQUIRED = {
     "PySide6": "PySide6",
     "numpy": "numpy",
@@ -50,5 +49,5 @@ def ensure_dependencies(python_cmd):
 if __name__ == "__main__":
     py = find_python()
     ensure_dependencies(py)
-    
+
     subprocess.run([sys.executable, main_path])
