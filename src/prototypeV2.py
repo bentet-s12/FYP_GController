@@ -587,7 +587,7 @@ class CameraWindow(QWidget):
         self.chk_gray.setChecked(bool(self.app.cam_grayscale))
         self.chk_gray.setFont(font)
         self.chk_gray.setStyleSheet("""
-                                            background: #252438;
+                                        background: #252438;
                                         """)
         c.addWidget(self.chk_gray)
 
