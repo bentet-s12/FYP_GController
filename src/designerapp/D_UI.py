@@ -891,6 +891,15 @@ class MainWindow(QWidget):
         f.setPointSize(20)
         label_title.setFont(f)
         
+        instruction_button = QPushButton(top_frame)
+        instruction_button.setGeometry(400, 10, 60, 60)
+        instruction_button.setIcon(QIcon(instruction_path))
+        instruction_button.setIconSize(QSize(50,50))
+        instruction_button.setStyleSheet("""
+                                    QPushButton {background: transparent; border: none; border-radius: 8px;}
+                                    QPushButton:hover {background: #252438;}
+                                    """)
+        
         dialog_scroll = QScrollArea(dialog)
         dialog_scroll.setGeometry(0, 80, 500, 720)
         dialog_scroll.setStyleSheet("background: #3c384d; border: none;")
@@ -1124,27 +1133,7 @@ class MainWindow(QWidget):
             # self.send_cmd(f"SET_SENS {v/100:.2f}")
             self.send_cmd(f"SET_SENS {v}")
         sensitivity_slider.sliderReleased.connect(lambda: on_sens_changed(sensitivity_slider.value()))
-        
-        instruction_setting = QWidget()
-        instruction_setting.setFixedHeight(80)
-        instruction_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
-        dialog_scroll_layout.addWidget(instruction_setting)
-        
-        instruction_title = QLabel("Instructions Manual:", instruction_setting)
-        instruction_title.setGeometry(20,20,230, 40)
-        instruction_title.setStyleSheet("color: #e0dde5; background: transparent;")
-        f = instruction_title.font()
-        f.setPointSize(16)
-        instruction_title.setFont(f)
-        
-        instruction_button = QPushButton(instruction_setting)
-        instruction_button.setGeometry(330, 10, 60, 60)
-        instruction_button.setIcon(QIcon(instruction_path))
-        instruction_button.setIconSize(QSize(50,50))
-        instruction_button.setStyleSheet("""
-                                    QPushButton {background: #252438; border: none;}
-                                    QPushButton:hover {background: #3c384d;}
-                                    """)
+
         _apply_hand_mode()
         dialog.exec()
 
@@ -1164,11 +1153,17 @@ class MainWindow(QWidget):
             return f"ERR: {e}"
         
     def tab_rename(self, index):
-        text, ok = QInputDialog.getText(
-            self,
-            "Rename Tab",
-            "Enter new name:"
-        )
+        if (index == 0):
+            return
+        
+        dialog = QInputDialog(self)
+        dialog.setWindowTitle("Rename Tab")
+        dialog.setLabelText("Enter new name:")
+        dialog.setFixedSize(300,300)
+        dialog.setStyleSheet("QDialog {background: #3c384d;} QLabel {color: #e0dde5; font-size: 14px;}")
+        
+        ok = dialog.exec()
+        text = dialog.textValue()
 
         if not ok or not text:
             return
@@ -1244,6 +1239,7 @@ class MainWindow(QWidget):
         plus_path    = os.path.join(BASE_DIR, "resource", "Add-Circle--Streamline-Core.png")
         camera_path  = os.path.join(BASE_DIR, "resource", "Camera-1--Streamline-Core.png")
         setting_path = os.path.join(BASE_DIR, "resource", "Cog--Streamline-Core.png")
+        pencil_path = os.path.join(BASE_DIR, "resource", "Pencil--Streamline-Core.png")
 
         # needed for resize purpose
         geom = self.geometry()
@@ -1311,7 +1307,7 @@ class MainWindow(QWidget):
         scroll_container.setWidgetResizable(True)
 
         # ---- insert the tab ----
-        self.tabs.insertTab(insert_index, new_tab, profile_id)
+        self.tabs.insertTab(insert_index, new_tab, QIcon(pencil_path), profile_id)
 
         # keep "+" tab at the end
         self.last_tab_index = self.tabs.count() - 1
@@ -1493,7 +1489,7 @@ class MainWindow(QWidget):
         gestures = load_gestures()
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Gesture Library")
+        dialog.setWindowTitle("Action Library")
         dialog.setFixedSize(400, 500)
         dialog.setModal(True)
 
@@ -1501,7 +1497,7 @@ class MainWindow(QWidget):
         top_frame.setGeometry(0, 0, 400, 70)
         top_frame.setStyleSheet("background-color: #030013;")
 
-        label_title = QLabel("Gesture Library", top_frame)
+        label_title = QLabel("Action Library", top_frame)
         label_title.setGeometry(20, 20, 250, 31)
         label_title.setStyleSheet("color: #e0dde5; background: transparent;")
         f = label_title.font()
@@ -1515,9 +1511,9 @@ class MainWindow(QWidget):
             selected["name"] = name
             # optional: update title or status
             if name:
-                label_title.setText(f"Gesture Library  ({name})")
+                label_title.setText(f"Action Library  ({name})")
             else:
-                label_title.setText("Gesture Library")
+                label_title.setText("Action Library")
 
         # ---- record button (uses selected gesture) ----
         rec_button = QPushButton(top_frame)
@@ -1574,6 +1570,9 @@ class MainWindow(QWidget):
                 gesture_text.setGeometry(10, 10, 270, 30)
                 gesture_text.setStyleSheet("border: none; background: transparent; color: #e0dde5;")
                 gesture_text.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+                f = gesture_text.font()
+                f.setPointSize(14)
+                gesture_text.setFont(f)
 
                 # Make the row selectable by click
                 def make_click_handler(name):
@@ -1590,7 +1589,7 @@ class MainWindow(QWidget):
                 trash_button = QPushButton(gesture_bar)
                 trash_button.setGeometry(310, 5, 40, 40)
                 trash_button.setIcon(QIcon(trash_path))
-                trash_button.setIconSize(QSize(40, 40))
+                trash_button.setIconSize(QSize(30, 30))
                 trash_button.setFlat(True)
 
                 def make_delete_handler(name):
@@ -1942,6 +1941,9 @@ class MainWindow(QWidget):
         - 'name' (action name) is editable (gesture_edit)
         - 'G_name' (gesture) is dropdown (action_box)
         """
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        pencil_path = os.path.join(BASE_DIR, "resource", "Pencil--Streamline-Core.png")
+        
         g_name = act.getGName()
         key    = act.getKeyPressed()
         itype  = act.getInputType()
@@ -1961,12 +1963,21 @@ class MainWindow(QWidget):
                 border-radius: 12px;
             }
         """)
+        
+                
+        pencil_icon = QLabel(sub_bar_frame)
+        pencil_icon.setGeometry(60,50,25,25)
+        pencil_icon.setStyleSheet("background: transparent; border: none;")
+        pencil_icon.setPixmap(QPixmap(pencil_path))
+        pencil_icon.setScaledContents(True)
 
         # ----- Editable NAME field (this edits "name") -----
         gesture_edit = QLineEdit(a_name, sub_bar_frame)
-        gesture_edit.setGeometry(60, 42, 180, 40)
-        gesture_edit.setAlignment(Qt.AlignCenter)
+        gesture_edit.setGeometry(90, 42, 180, 40)
+        gesture_edit.setAlignment(Qt.AlignLeft)
         gFont = gesture_edit.font()
+        gFont.setBold(True)
+        gFont.setPointSize(16)
         gFont.setPointSize(14)
         gesture_edit.setFont(gFont)
         gesture_edit.setStyleSheet("""
@@ -1980,7 +1991,8 @@ class MainWindow(QWidget):
         key_input.setGeometry(350, 25, 120, 30)
         key_input.setAlignment(Qt.AlignCenter)
         kFont = key_input.font()
-        kFont.setPointSize(9)
+        kFont.setBold(True)
+        kFont.setPointSize(10)
         key_input.setFont(kFont)
         key_input.setReadOnly(True)
         key_input.setStyleSheet("""
@@ -2020,10 +2032,11 @@ class MainWindow(QWidget):
 
         # ----- Input type label -----
         input_type = QTextEdit("INPUT TYPE", sub_bar_frame)
-        input_type.setGeometry(650, 25, 120, 30)
+        input_type.setGeometry(643, 25, 120, 30)
         input_type.setAlignment(Qt.AlignCenter)
         iFont = input_type.font()
-        iFont.setPointSize(9)
+        iFont.setBold(True)
+        iFont.setPointSize(10)
         input_type.setFont(iFont)
         input_type.setReadOnly(True)
         input_type.setStyleSheet("""
@@ -2067,7 +2080,8 @@ class MainWindow(QWidget):
         action_label.setGeometry(1125, 25, 150, 30)
         action_label.setAlignment(Qt.AlignCenter)
         aFont = action_label.font()
-        aFont.setPointSize(9)
+        aFont.setBold(True)
+        aFont.setPointSize(10)
         action_label.setFont(aFont)
         action_label.setReadOnly(True)
         action_label.setStyleSheet("""
