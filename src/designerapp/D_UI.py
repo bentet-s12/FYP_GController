@@ -858,15 +858,20 @@ class MainWindow(QWidget):
         usage_instructions_path = os.path.join(BASE_DIR, "user_manual_image", "image14.png")
         create_profile_path = os.path.join(BASE_DIR, "user_manual_image", "image8.png")
         delete_profile_path = os.path.join(BASE_DIR, "user_manual_image", "image7.png")
+        rename_profile_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image35.png")
+        rename_profile_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image44.png")
+        swap_profile_path = os.path.join(BASE_DIR, "user_manual_image", "image17.png")
+        create_gesture_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image18.png")
+        create_gesture_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image16.png")
         
-        def make_page(icon_path, text):
+        def make_page(icon_path_1, text_1, icon_path_2, text_2):
             
             page = QWidget()
             layout = QVBoxLayout(page)
 
             # Image
             icon = QLabel()
-            pix = QPixmap(icon_path)
+            pix = QPixmap(icon_path_1)
             icon.setPixmap(
                 pix.scaled(500, 500, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             )
@@ -878,7 +883,7 @@ class MainWindow(QWidget):
 
 
             # Text
-            label = QLabel(text)
+            label = QLabel(text_1)
             f = label.font()
             f.setPointSize(16)
             label.setFont(f)
@@ -886,6 +891,28 @@ class MainWindow(QWidget):
 
             layout.addWidget(label)
             layout.addWidget(icon)
+            
+            if (icon_path_2 is not None and text_2 is not None):
+                icon2 = QLabel()
+                pix = QPixmap(icon_path_1)
+                icon2.setPixmap(
+                    pix.scaled(500, 500, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                )
+                icon2.setStyleSheet("""
+                    QLabel {
+                        border: 2px solid white;
+                    }
+                """)
+
+                label2 = QLabel(text_2)
+                f = label2.font()
+                f.setPointSize(16)
+                label2.setFont(f)
+                label2.setWordWrap(True)
+                
+                layout.addWidget(label2)
+                layout.addWidget(icon2)
+                
             layout.addStretch()
 
             return page
@@ -929,15 +956,25 @@ class MainWindow(QWidget):
                                 }
                                 """)
 
-        toolbox.addItem(make_page(usage_instructions_path, "This is what you will see when the application is opened."), "Usage Instructions:")
+        toolbox.addItem(make_page(usage_instructions_path, "This is what you will see when the application is opened.", None, None), "Usage Instructions:")
         
         create_profile = "Create profiles to save a preset of gesture controls.\n\n1. Click on the + button near the profile tabs at the top of the application to create a new profile.\n\n2. The + button will always be to the right of the profile tabs."
-        toolbox.addItem(make_page(create_profile_path, create_profile), "Create Profile:")
+        toolbox.addItem(make_page(create_profile_path, create_profile, None, None), "Create Profile:")
         
         delete_profile = "Delete custom profiles.\n\n1. Click on the x button at the right of the profile tab to delete the profile.\n\n2. The default profile cannot be deleted."
-        toolbox.addItem(make_page(delete_profile_path, delete_profile), "Delete Profile:")
+        toolbox.addItem(make_page(delete_profile_path, delete_profile, None, None), "Delete Profile:")
         
-        rename_profile = "Rename their profile to another name."
+        rename_profile = "Rename their profile to another name.\n\n1. Double click on the name of the profile in the profile tab to open a window that allows you to enter the new profile name"
+        rename_profile_2 = "\n2. Hit OK once you enter the name you want.\n\n3. The default profile cannot be renamed."
+        
+        toolbox.addItem(make_page(rename_profile_path_1, rename_profile, rename_profile_path_2, rename_profile_2), "Rename Profile:")
+        
+        swap_profile = "Swap between available profiles.\n\n1. Click on a profile in the profile tab to swap to the profile you want to use."
+        toolbox.addItem(make_page(swap_profile_path, swap_profile, None, None), "Swap Profiles:")
+        
+        create_gesture_1 = "Create a gesture in a custom profile.\n\n1. Click on the + button at the top right of the profile below the power button to create a new gesture."
+        create_gesture_2 = "\n2. A tab like this will be created in the profile after pressing the button."
+        toolbox.addItem(make_page(create_gesture_path_1, create_gesture_1, create_gesture_path_2, create_gesture_2), "Create Gesture:")
         
         dialog_scroll_layout.addWidget(toolbox)
         dialog.exec()
