@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
     QStatusBar, QMessageBox, QLabel, QPushButton, 
     QLineEdit, QComboBox, QTabBar, QToolButton, QDialog, QScrollArea, 
-    QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox, QInputDialog, QSlider, QCheckBox
+    QSizePolicy, QFrame, QTextBrowser, QGraphicsDropShadowEffect, QTabWidget, QTextEdit, QDialogButtonBox, QInputDialog, QSlider, QCheckBox,
+    QToolBox
 )
 from pathlib import Path
 from ProfileManager import ProfileManager
@@ -850,6 +851,96 @@ class MainWindow(QWidget):
                     return True  # stop propagation so it doesn't type into textboxes
 
         return super().eventFilter(obj, event)
+    
+    def user_manual_dialog(self):
+        
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        usage_instructions_path = os.path.join(BASE_DIR, "user_manual_image", "image14.png")
+        create_profile_path = os.path.join(BASE_DIR, "user_manual_image", "image8.png")
+        delete_profile_path = os.path.join(BASE_DIR, "user_manual_image", "image7.png")
+        
+        def make_page(icon_path, text):
+            
+            page = QWidget()
+            layout = QVBoxLayout(page)
+
+            # Image
+            icon = QLabel()
+            pix = QPixmap(icon_path)
+            icon.setPixmap(
+                pix.scaled(500, 500, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+            icon.setStyleSheet("""
+                QLabel {
+                    border: 2px solid white;
+                }
+            """)
+
+
+            # Text
+            label = QLabel(text)
+            f = label.font()
+            f.setPointSize(16)
+            label.setFont(f)
+            label.setWordWrap(True)
+
+            layout.addWidget(label)
+            layout.addWidget(icon)
+            layout.addStretch()
+
+            return page
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("User Manual")
+        dialog.setFixedSize(600, 800)
+        dialog.setModal(True)
+        
+        top_frame = QFrame(dialog)
+        top_frame.setGeometry(0, 0, 600, 80)
+        top_frame.setStyleSheet("background-color: #030013;")
+        
+        label_title = QLabel("User Manual", top_frame)
+        label_title.setGeometry(30, 20, 220, 40)
+        label_title.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = label_title.font()
+        f.setPointSize(20)
+        label_title.setFont(f)
+        
+        dialog_scroll = QScrollArea(dialog)
+        dialog_scroll.setGeometry(0, 80, 600, 720)
+        dialog_scroll.setStyleSheet("background: #3c384d; border: none;")
+        dialog_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
+
+        dialog_scroll_content = QWidget()
+        dialog_scroll.setWidget(dialog_scroll_content)
+        dialog_scroll_layout = QVBoxLayout(dialog_scroll_content)
+        dialog_scroll_layout.setAlignment(Qt.AlignTop)
+        dialog_scroll_layout.setContentsMargins(20, 30, 20, 10)
+        dialog_scroll_layout.setSpacing(20)
+        dialog_scroll.setWidgetResizable(True)
+        
+        toolbox = QToolBox()
+        toolbox.setStyleSheet("""
+                                QToolBox::tab {
+                                    font-size: 20px;
+                                    font-weight: bold;
+                                    background: #030013;
+                                    border-radius: 8px;
+                                }
+                                """)
+
+        toolbox.addItem(make_page(usage_instructions_path, "This is what you will see when the application is opened."), "Usage Instructions:")
+        
+        create_profile = "Create profiles to save a preset of gesture controls.\n\n1. Click on the + button near the profile tabs at the top of the application to create a new profile.\n\n2. The + button will always be to the right of the profile tabs."
+        toolbox.addItem(make_page(create_profile_path, create_profile), "Create Profile:")
+        
+        delete_profile = "Delete custom profiles.\n\n1. Click on the x button at the right of the profile tab to delete the profile.\n\n2. The default profile cannot be deleted."
+        toolbox.addItem(make_page(delete_profile_path, delete_profile), "Delete Profile:")
+        
+        rename_profile = "Rename their profile to another name."
+        
+        dialog_scroll_layout.addWidget(toolbox)
+        dialog.exec()
 
 
     def setting_dialog(self):
@@ -899,6 +990,7 @@ class MainWindow(QWidget):
                                     QPushButton {background: transparent; border: none; border-radius: 8px;}
                                     QPushButton:hover {background: #252438;}
                                     """)
+        instruction_button.clicked.connect(self.user_manual_dialog)
         
         dialog_scroll = QScrollArea(dialog)
         dialog_scroll.setGeometry(0, 80, 500, 720)
