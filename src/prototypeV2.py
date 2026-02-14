@@ -35,9 +35,9 @@ PROFILE_MANAGER_PATH = os.path.join(SCRIPT_DIR, "profileManager.json")
 PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "Default.json")
 GESTURELIST_JSON_PATH = os.path.join(SCRIPT_DIR, "GestureList.json")
 STRICT_GESTURELIST = True  # if True: ignore profile mappings whose gesture is not in GestureList.json
-X_PATH = os.path.join(SCRIPT_DIR, "data", "X.npy")
-Y_PATH = os.path.join(SCRIPT_DIR, "data", "y.npy")
-CLASSES_PATH = os.path.join(SCRIPT_DIR, "data", "class_names.npy")
+X_PATH = os.path.join(DATA_DIR, "X.npy")
+Y_PATH = os.path.join(DATA_DIR, "y.npy")
+CLASSES_PATH = os.path.join(DATA_DIR, "class_names.npy")
 # ================== CONSTANTS ====================
 
 K_NEIGHBORS = 3
@@ -156,8 +156,9 @@ def dataset_load():
     if not (os.path.exists(X_PATH) and os.path.exists(Y_PATH) and os.path.exists(CLASSES_PATH)):
         return None, None, None
     X = np.load(X_PATH, allow_pickle=False)
-    y = np.load(Y_PATH, allow_pickle=False)
+    y = np.load(Y_PATH, allow_pickle=True)
     classes = np.load(CLASSES_PATH, allow_pickle=True).tolist()
+    print(f"[DATASET] Loaded: X={X.shape} y={len(y)} -> {X_PATH}", flush=True)
     return X, y, classes
 
 def dataset_save(X, y, classes):
@@ -165,6 +166,7 @@ def dataset_save(X, y, classes):
     np.save(X_PATH, X)
     np.save(Y_PATH, y)
     np.save(CLASSES_PATH, np.array(classes, dtype=object))
+    print(f"[DATASET] Saved: X={X.shape} y={len(y)} -> {X_PATH}", flush=True)
 
 def dataset_delete_label(label: str) -> bool:
     X, y, classes = dataset_load()
