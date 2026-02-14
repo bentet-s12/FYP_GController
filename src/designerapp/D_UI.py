@@ -861,8 +861,43 @@ class MainWindow(QWidget):
         swap_profile_path = os.path.join(BASE_DIR, "user_manual_image", "image17.png")
         create_gesture_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image18.png")
         create_gesture_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image16.png")
+        delete_gesture_path = os.path.join(BASE_DIR, "user_manual_image", "image33.png")
+        rename_gesture_path = os.path.join(BASE_DIR, "user_manual_image", "image28.png")
+        set_key_input_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image4.png")
+        set_key_input_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image3.png")
+        set_input_type_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image25.png")
+        set_input_type_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image1.png")
+        assign_action_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image26.png")
+        assign_action_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image15.png")
+        access_library_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image34.png")
+        access_library_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image40.png")
+        record_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image27.png")
+        record_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image30.png")
+        record_path_3 = os.path.join(BASE_DIR, "user_manual_image", "image32.png")
+        delete_action_path = os.path.join(BASE_DIR, "user_manual_image", "image31.png")
+        settings_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image13.png")
+        settings_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image39.png")
+        hand_mode_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image36.png")
+        hand_mode_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image19.png")
+        set_hand_mode_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image43.png")
+        set_hand_mode_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image3.png")
+        mouse_mode_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image42.png")
+        mouse_mode_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image5.png")
+        set_mouse_mode_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image9.png")
+        set_mouse_mode_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image3.png")
+        hand_vectors_path = os.path.join(BASE_DIR, "user_manual_image", "image20.png")
+        sensitivity_path = os.path.join(BASE_DIR, "user_manual_image", "image23.png")
+        instruction_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image38.png")
+        instruction_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image.png")
+        display_path_1 = os.path.join(BASE_DIR, "user_manual_image", "image12.png")
+        display_path_2 = os.path.join(BASE_DIR, "user_manual_image", "image37.png")
+        contrast_path = os.path.join(BASE_DIR, "user_manual_image", "image6.png")
+        brightness_path = os.path.join(BASE_DIR, "user_manual_image", "image24.png")
+        grey_scale_path = os.path.join(BASE_DIR, "user_manual_image", "image22.png")
+        filter_path = os.path.join(BASE_DIR, "user_manual_image", "image10.png")
+        exit_path = os.path.join(BASE_DIR, "user_manual_image", "image21.png")
         
-        def make_page(icon_path_1, text_1, icon_path_2, text_2):
+        def make_page(icon_path_1, text_1, icon_path_2 = None, text_2 = None, icon_path_3 = None, text_3 = None):
             
             page = QWidget()
             layout = QVBoxLayout(page)
@@ -892,7 +927,7 @@ class MainWindow(QWidget):
             
             if (icon_path_2 is not None and text_2 is not None):
                 icon2 = QLabel()
-                pix = QPixmap(icon_path_1)
+                pix = QPixmap(icon_path_2)
                 icon2.setPixmap(
                     pix.scaled(500, 500, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 )
@@ -911,13 +946,35 @@ class MainWindow(QWidget):
                 layout.addWidget(label2)
                 layout.addWidget(icon2)
                 
+                
+            if (icon_path_3 is not None and text_3 is not None):
+                icon3 = QLabel()
+                pix = QPixmap(icon_path_3)
+                icon3.setPixmap(
+                    pix.scaled(500, 500, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                )
+                icon3.setStyleSheet("""
+                    QLabel {
+                        border: 2px solid white;
+                    }
+                """)
+
+                label3 = QLabel(text_3)
+                f = label3.font()
+                f.setPointSize(16)
+                label3.setFont(f)
+                label3.setWordWrap(True)
+                
+                layout.addWidget(label3)
+                layout.addWidget(icon3)
+                
             layout.addStretch()
 
             return page
         
         dialog = QDialog(self)
         dialog.setWindowTitle("User Manual")
-        dialog.setFixedSize(600, 800)
+        dialog.setMinimumSize(600, 800)
         dialog.setModal(True)
         
         top_frame = QFrame(dialog)
@@ -943,6 +1000,7 @@ class MainWindow(QWidget):
         dialog_scroll_layout.setContentsMargins(20, 30, 20, 10)
         dialog_scroll_layout.setSpacing(20)
         dialog_scroll.setWidgetResizable(True)
+        dialog_scroll_content.setMinimumHeight(720)
         
         toolbox = QToolBox()
         toolbox.setStyleSheet("""
@@ -954,13 +1012,18 @@ class MainWindow(QWidget):
                                 }
                                 """)
 
-        toolbox.addItem(make_page(usage_instructions_path, "This is what you will see when the application is opened.", None, None), "Usage Instructions:")
+        toolbox.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Fixed
+        )
+
+        toolbox.addItem(make_page(usage_instructions_path, "This is what you will see when the application is opened."), "Usage Instructions:")
         
         create_profile = "Create profiles to save a preset of gesture controls.\n\n1. Click on the + button near the profile tabs at the top of the application to create a new profile.\n\n2. The + button will always be to the right of the profile tabs."
-        toolbox.addItem(make_page(create_profile_path, create_profile, None, None), "Create Profile:")
+        toolbox.addItem(make_page(create_profile_path, create_profile), "Create Profile:")
         
         delete_profile = "Delete custom profiles.\n\n1. Click on the x button at the right of the profile tab to delete the profile.\n\n2. The default profile cannot be deleted."
-        toolbox.addItem(make_page(delete_profile_path, delete_profile, None, None), "Delete Profile:")
+        toolbox.addItem(make_page(delete_profile_path, delete_profile), "Delete Profile:")
         
         rename_profile = "Rename their profile to another name.\n\n1. Double click on the name of the profile in the profile tab to open a window that allows you to enter the new profile name"
         rename_profile_2 = "\n2. Hit OK once you enter the name you want.\n\n3. The default profile cannot be renamed."
@@ -968,13 +1031,111 @@ class MainWindow(QWidget):
         toolbox.addItem(make_page(rename_profile_path_1, rename_profile, rename_profile_path_2, rename_profile_2), "Rename Profile:")
         
         swap_profile = "Swap between available profiles.\n\n1. Click on a profile in the profile tab to swap to the profile you want to use."
-        toolbox.addItem(make_page(swap_profile_path, swap_profile, None, None), "Swap Profiles:")
+        toolbox.addItem(make_page(swap_profile_path, swap_profile), "Swap Profiles:")
         
         create_gesture_1 = "Create a gesture in a custom profile.\n\n1. Click on the + button at the top right of the profile below the power button to create a new gesture."
         create_gesture_2 = "\n2. A tab like this will be created in the profile after pressing the button."
         toolbox.addItem(make_page(create_gesture_path_1, create_gesture_1, create_gesture_path_2, create_gesture_2), "Create Gesture:")
         
+        delete_gesture = "Delete a gesture in a custom profile.\n\n1. Click on the Bin button at the side of the gesture to delete that gesture."
+        toolbox.addItem(make_page(delete_gesture_path, delete_gesture), "Delete Gesture:")
+        
+        rename_gesture = "Rename gestures in a custom profile.\n\n1. Click on the name of the gesture to start renaming that gesture."
+        toolbox.addItem(make_page(rename_gesture_path, rename_gesture), "Rename Gesture:")
+        
+        set_key_input_1 = "Assign a key input to a gesture.\n\n1. Click on the key in the box under Key Input to change it into a key of your choice."
+        set_key_input_2 = "\n2. A window prompting you to enter a key to bind will appear.\n\n3. Once you enter a key, it will set the key input to that key, or you can set it to NULL or Cancel the operation by clicking one of the buttons."
+        toolbox.addItem(make_page(set_key_input_path_1, set_key_input_1,set_key_input_path_2,set_key_input_2), "Set Key Input:")
+        
+        set_input_type_1 = "Assign the input type between click and hold to a gesture.\n\n1. Click on the dropdown box under Input Type to change it between “Click”,  “Hold”, or “Double Click”."
+        set_input_type_2 = "\n2. Once you click on an option, the Input type will be changed.\n\n3. The options in the dropdown box is dependant on the actions saved in the Action Library."
+        toolbox.addItem(make_page(set_input_type_path_1, set_input_type_1, set_input_type_path_2, set_input_type_2), "Set Input Type:")
+        
+        assign_action_1 = "Assign an action to a gesture.\n\n1. Click on the dropdown box under ACTION to select which action from the action library you want to assign to the gesture"
+        assign_action_2 = "\n2. Once you click on an option, the assigned action will be changed.\n\n3. The options in the dropdown box is dependant on the actions saved in the Action Library."
+        toolbox.addItem(make_page(assign_action_path_1, assign_action_1, assign_action_path_2, assign_action_2), "Assign Action:")
+        
+        access_library_1 = "1.Click on the book button on the top right of the application to open the Action Library"
+        access_library_2 = "\n2. This is what the Action Library looks like when it opens"
+        toolbox.addItem(make_page(access_library_path_1, access_library_1,access_library_path_2,access_library_2), "How to access Action Library:")
+        
+        record_1 = "Record an action which is then saved into the Action Library\n\n1. Click on the Record button on the top right of the Action Library window to begin recording your action."
+        record_2 = "\n2. A window asking you to name the action will appear."
+        record_3 = "\n3. Once you type a name for your gesture and click OK, the recording window will open.\n\n4. Pressing “S” will swap between recording both hands (100 samples each) or one hand (200 samples)\n\n5. Pressing “D” will swap between left or right hand when recording for only one hand.\n\n6. Hit spacebar to begin recording\n\n7. When the recording is completed, it is saved into the Action Library"
+        toolbox.addItem(make_page(record_path_1, record_1, record_path_2, record_2, record_path_3, record_3), "Record: ")
+        
+        delete_action = " Delete an action in the Action Library\n\n1. Click on the Bin icon next to the action you want to delete in the Action Library window\n\n2. The action will no longer be inside the Action Library"
+        toolbox.addItem(make_page(delete_action_path, delete_action), "Delete Action:")
+        
+        settings_1 = "1. Click on the gear icon on the top right of the application to open the settings menu"
+        settings_2 = "\n2. This is what the settings menu looks like"
+        toolbox.addItem(make_page(settings_path_1,settings_1,settings_path_2,settings_2), "How to access Settings:")
+        
+        hand_mode_1 = "Swap between different hand modes when using the app\n\n1. Click on the dropdown box for Hand Mode"
+        hand_mode_2 = "\n2. Choose between Auto, Right pointer, Left pointer, and MultiKB. Right pointer and Left pointer designates your respective hand to be the mouse pointer when using mouse/cursor mode, while MultiKB makes both hands do keyboard inputs. Auto will automatically decide which hand is the pointer.\n\n3. Select the mode you want to use\n\n4. The Hand Mode now reflects the change"
+        toolbox.addItem(make_page(hand_mode_path_1, hand_mode_1, hand_mode_path_2, hand_mode_2), "Hand Mode:")
+        
+        set_hand_mode_1 = "Set a key for cycling Hand Modes using a shortcut gesture\n\n1. Click on the box for Hand mode cycle key"
+        set_hand_mode_2 = "\n2. A window requesting a key appears\n\n3. Enter the key you want to assign\n\n4. Hand Mode Cycle Key is not assigned to that key"
+        toolbox.addItem(make_page(set_hand_mode_path_1,set_hand_mode_1, set_hand_mode_path_2,set_hand_mode_2), "Set Hand Mode Cycle Key:")
+        
+        mouse_mode_1 = "Swap between different mouse modes when using the app\n\n1. Click on the dropdown box for Mouse Mode"
+        mouse_mode_2 = "\n2. Choose between Disabled, Camera, or Cursor. Camera makes your pointer control camera movements in games, Cursor makes your pointer a cursor, while disable removes the capability to do camera or cursor control.\n\n3. Select the mode you want to use\n\n4. The Mouse Mode now reflects the change"
+        toolbox.addItem(make_page(mouse_mode_path_1, mouse_mode_1, mouse_mode_path_2, mouse_mode_2), "Mouse Mode:")
+        
+        set_mouse_mode_1 = "Set a key for cycling Mouse Modes using a shortcut gesture\n\n1. Click on the box for Hand mode cycle key"
+        set_mouse_mode_2 = "\n2. A window requesting a key appears\n\n3. Enter the key you want to assign\n\n4. Hand Mode Cycle Key is not assigned to that key"
+        toolbox.addItem(make_page(set_mouse_mode_path_1, set_mouse_mode_1, set_mouse_mode_path_2, set_mouse_mode_2), "Set Mouse Mode Cycle Key:")
+        
+        hand_vectors = "Enable/Disable hand vectors from showing in the webcam feed in the camera window\n\n1. Click on the option for hand vectors. This determines if hand vectors show up on the camera feed when viewing any camera windows"
+        toolbox.addItem(make_page(hand_vectors_path, hand_vectors), "Hand Vectors:")
+        
+        sensitivity = "Adjust the sensitivity of the tracking recognition of the app\n\n1. Click on the ball on the slider for sensitivity to adjust it\n\n2. Sliding it left makes tracking less sensitive, Sliding it right makes tracking more sensitive\n\n3. Slide it to your desired sensitivity"
+        toolbox.addItem(make_page(sensitivity_path, sensitivity), "Sensitivity: ")
+        
+        instruction_1 = "Opens a browser containing the Instruction Manual which you can download and view\n\n1. Click on the question mark button on the top right of the settings window"
+        instruction_2 = "\n2. A window containing this user manual should open\n\n3. The manual contains instructions on how to use each function of the application"
+        toolbox.addItem(make_page(instruction_path_1, instruction_1, instruction_path_2, instruction_2), "Instruction Manual:")
+        
+        display_1 = "Opens a window which displays a live feed of your webcam\n\n1. Click on the camera button on the top right of the application"
+        display_2 = "\n2. A window displaying a live feed of your webcam will open"
+        toolbox.addItem(make_page(display_path_1,display_1,display_path_2, display_2), "Webcam Feed Display:")
+        
+        contrast = "Adjust the contrast of your webcam feed which can help improve tracking quality\n\n1. Click on the ball on the slider for contrast to adjust it\n\n2. Slide it to your desired contrast amount"
+        toolbox.addItem(make_page(contrast_path, contrast), "Contrast:")
+        
+        brightness = "Adjust the brightness of your webcam feed which can help improve tracking quality\n\n1. Click on the ball on the slider for brightness to adjust it\n\n2. Slide it to your desired brightness amount"
+        toolbox.addItem(make_page(brightness_path, brightness), "Brightness:")
+        
+        grey_scale = "Enable/Disable greyscale for the live webcam feed which can help improve tracking quality\n\n1. Click on the checkbox for greyscale to enable/disable it\n\n2. Greyscale is enabled when checked and disabled when unchecked"
+        toolbox.addItem(make_page(grey_scale_path, grey_scale), "Greyscale:")
+        
+        filterr = "Applies the camera filter settings to the video feed when recording an action for the action library\n\n1. Click on the checkbox for Apply adjustments to tracking (advance) to enable/disable it\n\n2. Apply adjustments to tracking (advance) is enabled when checked and disabled when unchecked"
+        toolbox.addItem(make_page(filter_path, filterr), "Apply adjustments to tracking (advance):")
+        
+        exitt = "Quit out of the application completely\n\n1. Click on the power button on the top right of the application to quit out of the application completely."
+        toolbox.addItem(make_page(exit_path, exitt), "Exit:")
+        
         dialog_scroll_layout.addWidget(toolbox)
+        
+        def update_toolbox_height(index):            
+                    
+            current_page = toolbox.widget(index)                                 
+            header_height = toolbox.count() * 45                         
+         
+            content_height = current_page.sizeHint().height()                        
+          
+            total_height = header_height + content_height + 50                        
+          
+            final_height = max(total_height, 400)                        
+            toolbox.setMinimumHeight(final_height)
+            dialog_scroll_content.setMinimumHeight(final_height + 40)
+            
+        
+        toolbox.currentChanged.connect(update_toolbox_height)
+        
+        update_toolbox_height(0)
+
         dialog.exec()
 
 
@@ -1799,8 +1960,9 @@ class MainWindow(QWidget):
     def new_gesture_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Add New Gesture")
-        dialog.setFixedSize(800, 220)
+        dialog.setFixedSize(300, 220)
         dialog.setModal(True)
+        dialog.setStyleSheet("background: #3c384d;")
 
         layout = QVBoxLayout(dialog)
 
@@ -1808,18 +1970,19 @@ class MainWindow(QWidget):
         title.setAlignment(Qt.AlignCenter)
         title.setReadOnly(True)
         font = title.font()
-        font.setPointSize(12)
+        font.setPointSize(16)
         title.setFont(font)
+        title.setStyleSheet("border: none;")
         layout.addWidget(title)
 
         gesture_name_box = QTextEdit("")
         gesture_name_box.setAlignment(Qt.AlignCenter)
         font2 = gesture_name_box.font()
-        font2.setPointSize(12)
+        font2.setPointSize(14)
         gesture_name_box.setFont(font2)
         gesture_name_box.setStyleSheet("""
-            background-color: rgb(224, 221, 229);
-            color: rgb(0, 0, 0);
+            background-color: #e0dde5;
+            color: #030013;
         """)
         layout.addWidget(gesture_name_box)
 
