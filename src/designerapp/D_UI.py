@@ -1799,31 +1799,44 @@ class MainWindow(QWidget):
     def new_gesture_dialog(self):
         dialog = QDialog(self)
         dialog.setWindowTitle("Add New Gesture")
-        dialog.setFixedSize(800, 220)
+        dialog.setFixedSize(300, 220)
         dialog.setModal(True)
-
+        dialog.setStyleSheet("background: #3c384d;")
         layout = QVBoxLayout(dialog)
 
         title = QTextEdit("Gesture Name")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignLeft)
         title.setReadOnly(True)
         font = title.font()
-        font.setPointSize(12)
+        font.setPointSize(16)
         title.setFont(font)
+        title.setStyleSheet("border: none;" 
+            "color: #ffffff")
         layout.addWidget(title)
 
         gesture_name_box = QTextEdit("")
         gesture_name_box.setAlignment(Qt.AlignCenter)
         font2 = gesture_name_box.font()
-        font2.setPointSize(12)
+        font2.setPointSize(14)
         gesture_name_box.setFont(font2)
         gesture_name_box.setStyleSheet("""
-            background-color: rgb(224, 221, 229);
-            color: rgb(0, 0, 0);
+            background-color: #e0dde5;f
+            color: #030013;
         """)
         layout.addWidget(gesture_name_box)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.setStyleSheet("""
+        QPushButton {
+            background-color: #e0dde5;
+            color: #030013;
+            border-radius: 6px;
+            padding: 6px;
+        }
+        QPushButton:hover {
+            background-color: #cfcbd6;
+        }
+        """)
         layout.addWidget(buttons)
 
         def on_ok():

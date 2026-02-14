@@ -16,9 +16,9 @@
             "key_type": null
         },
         {
-            "name": "new_action_2",
-            "G_name": "cross",
-            "key_pressed": "t",
+            "name": "new_action_1",
+            "G_name": "crossblade",
+            "key_pressed": "g",
             "input_type": "Click",
             "key_type": null
         }

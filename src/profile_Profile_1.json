@@ -1,0 +1,12 @@
+{
+    "Profile_ID": "Profile_1",
+    "Actions": [
+        {
+            "name": "new_action_1",
+            "G_name": "crossblade",
+            "key_pressed": "g",
+            "input_type": "Click",
+            "key_type": null
+        }
+    ]
+}
