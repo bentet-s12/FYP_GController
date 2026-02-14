@@ -13,6 +13,7 @@ REQUIRED = {
     "pydirectinput": "pydirectinput",
     "keyboard": "keyboard",
     "PIL": "Pillow",
+    "SCREENINFO": "screeninfo",
 }
 
 # --------------------------------------------------

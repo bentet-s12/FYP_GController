@@ -13,7 +13,7 @@ from ctypes import wintypes
 import pyautogui  # Cursor mode absolute positioning
 import socket
 import threading
-from screeninfo import get_monitors
+#from screeninfo import get_monitors
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision
 # --- PySide6 camera window (replaces cv2.imshow + cv2 trackbars) ---
@@ -35,9 +35,9 @@ PROFILE_MANAGER_PATH = os.path.join(SCRIPT_DIR, "profileManager.json")
 PROFILE_JSON_PATH = os.path.join(SCRIPT_DIR, "Default.json")
 GESTURELIST_JSON_PATH = os.path.join(SCRIPT_DIR, "GestureList.json")
 STRICT_GESTURELIST = True  # if True: ignore profile mappings whose gesture is not in GestureList.json
-X_PATH = os.path.join(SCRIPT_DIR, "data", "X.npy")
-Y_PATH = os.path.join(SCRIPT_DIR, "data", "y.npy")
-CLASSES_PATH = os.path.join(SCRIPT_DIR, "data", "class_names.npy")
+X_PATH = os.path.join(DATA_DIR, "X.npy")
+Y_PATH = os.path.join(DATA_DIR, "y.npy")
+CLASSES_PATH = os.path.join(DATA_DIR, "class_names.npy")
 # ================== CONSTANTS ====================
 
 K_NEIGHBORS = 3
@@ -156,8 +156,9 @@ def dataset_load():
     if not (os.path.exists(X_PATH) and os.path.exists(Y_PATH) and os.path.exists(CLASSES_PATH)):
         return None, None, None
     X = np.load(X_PATH, allow_pickle=False)
-    y = np.load(Y_PATH, allow_pickle=False)
+    y = np.load(Y_PATH, allow_pickle=True)
     classes = np.load(CLASSES_PATH, allow_pickle=True).tolist()
+    print(f"[DATASET] Loaded: X={X.shape} y={len(y)} -> {X_PATH}", flush=True)
     return X, y, classes
 
 def dataset_save(X, y, classes):
@@ -165,6 +166,7 @@ def dataset_save(X, y, classes):
     np.save(X_PATH, X)
     np.save(Y_PATH, y)
     np.save(CLASSES_PATH, np.array(classes, dtype=object))
+    print(f"[DATASET] Saved: X={X.shape} y={len(y)} -> {X_PATH}", flush=True)
 
 def dataset_delete_label(label: str) -> bool:
     X, y, classes = dataset_load()
@@ -923,7 +925,7 @@ class ClickTesterGUI:
             pass
 
 
-
+'''
 # =================================================
 #   MONITOR DETECTION
 # =================================================
@@ -953,7 +955,7 @@ def select_monitor():
             if 0 <= idx < len(monitors):
                 return monitors[idx]
         print("Invalid selection. Try again.")
-
+'''
 class CommandServer(threading.Thread):
     def __init__(self, app, host="127.0.0.1", port=50555):
         super().__init__(daemon=True)
@@ -1275,16 +1277,16 @@ class GestureControllerApp:
 
     def get_collect_status(self) -> str:
         return self._collect_status
-
+    
     def _init_monitor(self):
         # if don't need cursor mode immediately, can skip prompting
-        self.monitor = None
+        # self.monitor = None
         screen_w, screen_h = pyautogui.size()
         self.screen_x = 0
         self.screen_y = 0
         self.screen_w = screen_w
         self.screen_h = screen_h
-
+    
     def _ensure_qt_camera(self):
         if self.camera_qt is not None:
             return
@@ -1356,7 +1358,9 @@ class GestureControllerApp:
         if mode == "DISABLED":
             self._reset_mouse_state()
 
-        if mode == "CURSOR" and self.monitor is None:
+        if mode == "CURSOR": 
+            '''and self.monitor is None'''
+            '''
             self.monitor = select_monitor()
             if self.monitor:
                 self.screen_x = self.monitor.x
@@ -1364,11 +1368,12 @@ class GestureControllerApp:
                 self.screen_w = self.monitor.width
                 self.screen_h = self.monitor.height
             else:
-                screen_w, screen_h = pyautogui.size()
-                self.screen_x = 0
-                self.screen_y = 0
-                self.screen_w = screen_w
-                self.screen_h = screen_h
+                '''
+            screen_w, screen_h = pyautogui.size()
+            self.screen_x = 0
+            self.screen_y = 0
+            self.screen_w = screen_w
+            self.screen_h = screen_h
 
         print("[MODE] mouse_mode ->", self.mouse_mode, flush=True)
         return True
@@ -2339,10 +2344,11 @@ class GestureControllerApp:
 
             mapped_text = " | ".join(mapped_texts) if mapped_texts else "None"
             fired_text = " | ".join(fired_texts) if fired_texts else "NO"
-
+            '''
             mon_txt = "All Screens"
             if self.monitor:
-                mon_txt = f"{self.screen_w}x{self.screen_h}"
+            '''
+            mon_txt = f"{self.screen_w}x{self.screen_h}"
 
             mode_text = f"Hand Mode: {self.hand_mode} | Mouse Mode: {self.mouse_mode} | Monitor: {mon_txt}"
 

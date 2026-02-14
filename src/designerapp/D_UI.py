@@ -1963,16 +1963,15 @@ class MainWindow(QWidget):
         dialog.setFixedSize(300, 220)
         dialog.setModal(True)
         dialog.setStyleSheet("background: #3c384d;")
-
         layout = QVBoxLayout(dialog)
 
         title = QTextEdit("Gesture Name")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignLeft)
         title.setReadOnly(True)
         font = title.font()
         font.setPointSize(16)
         title.setFont(font)
-        title.setStyleSheet("border: none;")
+        title.setStyleSheet("border: none; color: #ffffff;")
         layout.addWidget(title)
 
         gesture_name_box = QTextEdit("")
@@ -1987,6 +1986,17 @@ class MainWindow(QWidget):
         layout.addWidget(gesture_name_box)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.setStyleSheet("""
+        QPushButton {
+            background-color: #e0dde5;
+            color: #030013;
+            border-radius: 6px;
+            padding: 6px;
+        }
+        QPushButton:hover {
+            background-color: #cfcbd6;
+        }
+        """)
         layout.addWidget(buttons)
 
         def on_ok():
