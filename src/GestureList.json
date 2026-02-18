@@ -1,8 +1,9 @@
 [
-    "up",
     "down",
     "left",
     "right",
     "null",
-    "cross"
+    "up",
+    "stop",
+    "change_input_mode"
 ]

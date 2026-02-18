@@ -14,13 +14,6 @@
             "key_pressed": "f",
             "input_type": "Hold",
             "key_type": null
-        },
-        {
-            "name": "testing",
-            "G_name": "cross",
-            "key_pressed": "h",
-            "input_type": "Click",
-            "key_type": null
         }
     ]
 }

@@ -169,33 +169,38 @@ def dataset_save(X, y, classes):
     print(f"[DATASET] Saved: X={X.shape} y={len(y)} -> {X_PATH}", flush=True)
 
 def dataset_delete_label(label: str) -> bool:
+    label = (label or "").strip()
+    if not label:
+        return False
+
     X, y, classes = dataset_load()
     if X is None:
         print("[DELETE] Dataset files missing; nothing to do.")
         return False
 
-    # normalize y to string labels
-    y = np.array([str(v) for v in y], dtype=object)
+    # normalize y to clean strings
+    y_str = np.array([(str(v).strip()) for v in y], dtype=object)
 
-    # keep everything NOT matching label
-    keep = (y != label)
+    # also delete hand-suffixed variants if you use them
+    targets = {label, f"{label}__L", f"{label}__R"}
 
+    keep = np.array([v not in targets for v in y_str], dtype=bool)
     removed = int((~keep).sum())
+
     if removed == 0:
-        print("[DELETE] No samples found for:", label)
+        print("[DELETE] No samples found for:", label, "targets=", targets)
         return False
 
     X2 = X[keep]
-    y2 = y[keep]
+    y2 = y_str[keep]
 
-    # rebuild class list from remaining labels
+    # rebuild classes from remaining labels
     classes2 = sorted(set(y2.tolist()))
-
-    # overwrite npy files with filtered data (NOT deleting files)
     dataset_save(X2, y2, classes2)
 
-    print(f"[DELETE] Removed {removed} samples for '{label}'. Remaining samples: {len(y2)}")
+    print(f"[DELETE] Removed {removed} samples for '{label}'. Remaining={len(y2)}")
     return True
+
 
 
 def dataset_rename_label(old: str, new: str):
@@ -550,6 +555,20 @@ class CameraWindow(QWidget):
         c.setContentsMargins(12, 20, 12, 20)
         c.setSpacing(30)
 
+        # ---- Detected Gesture Display ----
+        # ---- Detected Gesture Text ----
+        self.lbl_detected = QLabel("Detected: nothing")
+        det_font = QFont()
+        det_font.setPointSize(18)
+        det_font.setBold(True)
+
+        self.lbl_detected.setFont(det_font)
+        self.lbl_detected.setAlignment(Qt.AlignCenter)
+        self.lbl_detected.setStyleSheet("color: white; background: #252438; padding: 6px; border-radius: 8px;")
+
+        root.addWidget(self.lbl_detected)
+
+
         # Contrast slider: map UI 0..350 => contrast -0.5..3.0
         row1 = QHBoxLayout()
         row1_label = QLabel("Contrast: ")
@@ -619,6 +638,12 @@ class CameraWindow(QWidget):
         self._last_pixmap = None
         self._last_key = None
         self.setFocusPolicy(Qt.StrongFocus)
+
+    def set_detected_gesture_text(self, text: str):
+        if not text:
+            text = "nothing"
+        self.lbl_detected.setText(f"Detected: {text}")
+
 
     def _on_contrast(self, v: int):
         self.app.cam_contrast = (float(v) / 100.0) - 0.50
@@ -1119,6 +1144,9 @@ class GestureControllerApp:
         self._gui_queue = queue.Queue()
         self._gui_thread = None
         self.gui = None  # created inside GUI thread
+        self._mode_cooldown = 1.0   # seconds
+        self._last_hand_mode_change = 0.0
+        self._last_mouse_mode_change = 0.0
 
         self.want_camera_view = False
         self._window_name = "Gesture Controller"
@@ -1130,6 +1158,8 @@ class GestureControllerApp:
 
         self.hand_mode_cycle = ["multi_keyboard","right", "left","auto"]
         self._hand_mode_idx = self.hand_mode_cycle.index(self.hand_mode)
+        self.mouse_mode_cycle = ["DISABLED", "CAMERA", "CURSOR"]
+        self._mouse_mode_idx = self.mouse_mode_cycle.index(self.mouse_mode)
 
         self.swap_handedness = False
 
@@ -1326,8 +1356,12 @@ class GestureControllerApp:
         self._mp_start_t = time.perf_counter()
 
     def set_hand_mode(self, mode: str) -> bool:
+        now = time.perf_counter()
+        if now - self._last_hand_mode_change < self._mode_cooldown:
+            print("[MODE] Cooldown active (hand).")
+            return False
         mode = (mode or "").strip().lower()
-
+        
         mapping = {
             "right": "right",
             "left": "left",
@@ -1338,7 +1372,7 @@ class GestureControllerApp:
         if mode not in mapping:
             print("[MODE] Bad hand_mode:", mode, flush=True)
             return False
-
+        self._last_hand_mode_change = now
         self.hand_mode = mapping[mode]
         # keep cycle index consistent
         if self.hand_mode in self.hand_mode_cycle:
@@ -1350,33 +1384,21 @@ class GestureControllerApp:
     def set_mouse_mode(self, mode: str) -> bool:
         mode = (mode or "").strip().upper()
 
-        if mode not in ("DISABLED", "CAMERA", "CURSOR"):
+        if mode not in self.mouse_mode_cycle:
             print("[MODE] Bad mouse_mode:", mode, flush=True)
             return False
 
         self.mouse_mode = mode
+        self._mouse_mode_idx = self.mouse_mode_cycle.index(mode)
+
         if mode == "DISABLED":
             self._reset_mouse_state()
 
-        if mode == "CURSOR": 
-            '''and self.monitor is None'''
-            '''
-            self.monitor = select_monitor()
-            if self.monitor:
-                self.screen_x = self.monitor.x
-                self.screen_y = self.monitor.y
-                self.screen_w = self.monitor.width
-                self.screen_h = self.monitor.height
-            else:
-                '''
-            screen_w, screen_h = pyautogui.size()
-            self.screen_x = 0
-            self.screen_y = 0
-            self.screen_w = screen_w
-            self.screen_h = screen_h
-
         print("[MODE] mouse_mode ->", self.mouse_mode, flush=True)
         return True
+
+
+
     
     def set_vectors_visible(self, val: str) -> bool:
         v = (val or "").strip().lower()
@@ -1562,7 +1584,7 @@ class GestureControllerApp:
         # Find the correct hand only (never save wrong hand)
         picked = None
         for (label, hand_lm, pred, conf) in detected:
-            if label == desired:
+            if label.lower() == desired.lower():
                 picked = hand_lm
                 break
 
@@ -1628,7 +1650,14 @@ class GestureControllerApp:
             gesturelist_add(self.collect_name)
 
             # 2) Merge tmp_collect → main dataset
-            dataset_add_from_folder(self.collect_name, tmp_folder)
+            if self.collect_mode == "ONE_HAND":
+                suffix = "__R" if self.collect_target_one == "RIGHT" else "__L"
+                label_to_save = self.collect_name + suffix
+            else:
+                label_to_save = self.collect_name
+
+            dataset_add_from_folder(label_to_save, tmp_folder)
+
 
             # 3) Reload classifier
             if self.classifier:
@@ -1743,15 +1772,18 @@ class GestureControllerApp:
         cv2.putText(frame, f"Need: {want}", (10, 170),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0,255,255), 2)
 
-        cv2.putText(frame, "SPACE start/pause | Q cancel | S mode | D hand(1-hand)", (10, 205),
+        cv2.putText(frame, "SPACE:start/pause | Q:cancel | S:mode | D:1/2 hand", (10, 205),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0,0,255), 2)
+
+        cv2.putText(frame, "| N:null input",(10, 240),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0,0,255), 2)
 
         if self.collect_paused:
-            cv2.putText(frame, "PAUSED", (10, 240),
+            cv2.putText(frame, "PAUSED", (10, 275),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,165,255), 2)
             
         if self.collect_waiting_for_hand and not self.collect_paused:
-            cv2.putText(frame, "WAITING FOR HAND...", (10, 275),
+            cv2.putText(frame, "WAITING FOR HAND...", (10, 310),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0,165,255), 2)
 
 
@@ -1934,23 +1966,38 @@ class GestureControllerApp:
         return label
 
     def cycle_hand_mode(self):
+        now = time.perf_counter()
+
+        if now - self._last_hand_mode_change < self._mode_cooldown:
+            print("[MODE] Hand mode cooldown active.")
+            return
+
+        self._last_hand_mode_change = now
+
         self._hand_mode_idx = (self._hand_mode_idx + 1) % len(self.hand_mode_cycle)
         self.hand_mode = self.hand_mode_cycle[self._hand_mode_idx]
+
         print(f"[MODE] Hand mode switched to: {self.hand_mode}")
 
+
     def cycle_mouse_mode(self):
-        # keep this order consistent with your UI
-        cycle = ["DISABLED", "CAMERA", "CURSOR"]
+        now = time.perf_counter()
+        if now - self._last_mouse_mode_change < self._mode_cooldown:
+            print("[MODE] Cooldown active (mouse).")
+            return
 
-        # if current is unknown, reset to first
-        try:
-            idx = cycle.index(self.mouse_mode)
-        except ValueError:
-            idx = 0
+        self._last_mouse_mode_change = now
 
-        idx = (idx + 1) % len(cycle)
-        self.set_mouse_mode(cycle[idx])
+        # Advance index
+        self._mouse_mode_idx = (self._mouse_mode_idx + 1) % len(self.mouse_mode_cycle)
+        self.mouse_mode = self.mouse_mode_cycle[self._mouse_mode_idx]
+
+        if self.mouse_mode == "DISABLED":
+            self._reset_mouse_state()
+
         print(f"[MODE] Mouse mode switched to: {self.mouse_mode}", flush=True)
+
+
 
 
     def enforce_hand_suffix(self, pred_label: str, hand_label: str) -> str:
@@ -2330,17 +2377,30 @@ class GestureControllerApp:
 
 
             # UI: show both hands in multi_keyboard, else show single current gesture
+            # ---- Update detected gesture text on camera window ----
             if self.hand_mode == "multi_keyboard":
                 gL = self.prev_gesture_by_hand.get("Left", "none")
                 gR = self.prev_gesture_by_hand.get("Right", "none")
-                gesture_text = f"Gesture: L={gL} | R={gR}"
+                gesture_text = f"L={gL} | R={gR}"
             else:
-                # for normal modes, show the single action hand gesture
-                # (if no action hand, it'll be "none")
-                only = "none"
+                gesture_text = "nothing"
                 if action_hands:
-                    only = self.prev_gesture_by_hand.get(action_hands[0][0], "none")
-                gesture_text = f"Gesture: {only}"
+                    lbl = action_hands[0][0]  # "Left" or "Right"
+                    gesture_text = self.prev_gesture_by_hand.get(lbl, "none")
+                    
+
+            # normalize to "nothing" when none
+            if not gesture_text or gesture_text.lower() in ("none", "nothing", "null"):
+                gesture_text = "nothing"
+            elif gesture_text.lower() == "none":
+                gesture_text = "nothing"
+
+            # Make sure the Qt camera window exists
+            self._ensure_qt_camera()
+
+            if self.camera_qt is not None:
+                self.camera_qt.set_detected_gesture_text(gesture_text)
+
 
             mapped_text = " | ".join(mapped_texts) if mapped_texts else "None"
             fired_text = " | ".join(fired_texts) if fired_texts else "NO"
@@ -2369,16 +2429,22 @@ class GestureControllerApp:
             # ---- PySide6 camera window update ----
             if self.want_camera_view:
                 self._ensure_qt_camera()
-                self._install_camera_shortcuts_from_pm()
+
                 if self.collect_running:
                     self._draw_collect_overlay(frame_display)
 
-                if not self.camera_qt.isVisible():
-                    self.camera_qt.show()
-                    self.camera_qt.raise_()
-                    self.camera_qt.activateWindow()
+                if self.camera_qt is not None:
 
-                self.camera_qt.set_frame_bgr(frame_display)
+                    if not self.camera_qt.isVisible():
+                        self.camera_qt.show()
+                        self.camera_qt.raise_()
+                        self.camera_qt.activateWindow()
+
+                    # 1️⃣ Update frame
+                    self.camera_qt.set_frame_bgr(frame_display)
+
+                    # 2️⃣ Update detected gesture text
+                    self.camera_qt.set_detected_gesture_text(gesture_text)
 
                 try:
                     self.qt_app.processEvents()
@@ -2392,6 +2458,7 @@ class GestureControllerApp:
                         self.qt_app.processEvents()
                     except Exception:
                         pass
+
 
             # IMPORTANT: no cv2.waitKey anymore
             k = 255
@@ -2452,6 +2519,9 @@ class GestureControllerApp:
                 elif k == ord('n'):
                     # Add a "null" gesture sample: a 42D zero vector (no hand vectors)
                     self._add_null_gesture_sample()
+                    self._exit_collect_to_background()
+
+                    print("[COLLECT] Null gesture saved. Exiting collect mode.")
                     handled = True
 
 

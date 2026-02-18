@@ -33,7 +33,14 @@
             "name": "neutral",
             "G_name": "null",
             "key_pressed": "NULL",
-            "input_type": "Click",
+            "input_type": "Hold",
+            "key_type": null
+        },
+        {
+            "name": "change_modes",
+            "G_name": "change_input_mode",
+            "key_pressed": "f2",
+            "input_type": "Hold",
             "key_type": null
         }
     ]

@@ -1881,7 +1881,7 @@ class MainWindow(QWidget):
                 trash_button.setFlat(True)
 
                 def make_delete_handler(name):
-                    def _():
+                    def deleteThis():
                         reply = QMessageBox.question(
                             dialog,
                             "Delete gesture",
@@ -1890,16 +1890,25 @@ class MainWindow(QWidget):
                         )
                         if reply != QMessageBox.Yes:
                             return
+
+                        # 1) Update GestureList.json (UI side)
                         cur = load_gestures()
                         cur2 = [x for x in cur if x != name]
-                        if save_gestures(cur2):
-                            # if deleting selected
-                            if selected["name"] == name:
-                                set_selected(None)
-                                resp = self.send_cmd(f"DELETE_GESTURE {name}")
-                                print("[UI] DELETE_GESTURE resp:", resp)
-                            rebuild_rows()
-                    return _
+                        if not save_gestures(cur2):
+                            return
+
+                        # 2) If it was selected, clear selection
+                        if selected["name"] == name:
+                            set_selected(None)
+
+                        # 3) ALWAYS tell backend to delete from dataset
+                        resp = self.send_cmd(f"DELETE_GESTURE {name}")
+                        print("[UI] DELETE_GESTURE resp:", resp)
+
+                        # 4) Refresh list UI
+                        rebuild_rows()
+                    return deleteThis
+
 
                 trash_button.clicked.connect(make_delete_handler(gname))
 

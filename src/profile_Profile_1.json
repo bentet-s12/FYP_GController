@@ -3,9 +3,9 @@
     "Actions": [
         {
             "name": "new_action_1",
-            "G_name": "crossblade",
-            "key_pressed": "g",
-            "input_type": "Click",
+            "G_name": null,
+            "key_pressed": null,
+            "input_type": null,
             "key_type": null
         }
     ]
