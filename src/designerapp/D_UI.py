@@ -741,17 +741,22 @@ class MainWindow(QWidget):
 
         def bind(action_name: str, callback):
             key_str = (shortcuts.get(action_name) or "").strip().lower()
+            print(f"[SHORTCUT INSTALL] {action_name} -> '{key_str}'", flush=True)
             seq = self._keystr_to_qkeysequence(key_str)
             if seq is None:
                 return  # no shortcut set
             sc = QShortcut(seq, self.window)  # IMPORTANT: attach to the loaded UI root
             sc.setContext(Qt.ApplicationShortcut)
-            sc.activated.connect(callback)
+            def wrapped():
+                print(f"[QT SHORTCUT FIRED] {action_name}", flush=True)
+                callback()
+            sc.activated.connect(wrapped)
             self._qt_shortcuts.append(sc)
 
         # Bind shortcuts to your existing actions
         bind("cycle_hand_mode", lambda: self.send_cmd("CYCLE_HAND_MODE"))
         bind("cycle_mouse_mode", lambda: self.send_cmd("CYCLE_MOUSE_MODE"))
+        bind("cycle_camera", lambda: self.send_cmd("CYCLE_CAMERA"))
         bind("toggle_camera", lambda: self.on_camera_clicked())
         bind("toggle_vectors", lambda: self.send_cmd("TOGGLE_VECTORS"))
         bind("reload_profile", lambda: self.send_cmd("RELOAD_PROFILE"))
@@ -785,6 +790,11 @@ class MainWindow(QWidget):
         if key_str and key_str == sc.get("cycle_mouse_mode", ""):
             print("[UI] shortcut: cycle_mouse_mode")
             print(self.send_cmd("CYCLE_MOUSE_MODE"))
+            return True
+        
+        if key_str and key_str == sc.get("cycle_camera", ""):
+            print("[UI] shortcut: cycle_camera")
+            print(self.send_cmd("CYCLE_CAMERA"))
             return True
 
         if key_str and key_str == sc.get("toggle_camera", ""):
@@ -1289,6 +1299,24 @@ class MainWindow(QWidget):
         mouse_mode_cycle_input.setGeometry(320,25,110,30)
         mouse_mode_cycle_input.setStyleSheet("color: #030013; background: #e0dde5; font-size: 12px;")
             
+        camera_device_setting = QWidget()
+        camera_device_setting.setFixedHeight(80)
+        camera_device_setting.setStyleSheet("border: none; background: #252438; border-radius: 8px;")
+        dialog_scroll_layout.addWidget(camera_device_setting)
+
+        camera_device_label = QLabel("Camera device:", camera_device_setting)
+        camera_device_label.setGeometry(20, 20, 230, 40)
+        camera_device_label.setStyleSheet("color: #e0dde5; background: transparent;")
+        f = camera_device_label.font()
+        f.setPointSize(16)
+        camera_device_label.setFont(f)
+
+        camera_combo = QComboBox(camera_device_setting)
+        camera_combo.setGeometry(320, 25, 110, 40)
+        camera_combo.setStyleSheet("""color: #030013; background: #e0dde5; border-radius: 8px; 
+                                            
+                                        """)
+
         # set initial text from profileManager.json
         pm = load_profile_manager_json()
 
@@ -1381,6 +1409,60 @@ class MainWindow(QWidget):
             }
             mode = ui_to_backend.get(txt, "DISABLED")
             print("[UI] set mouse mode ->", mode, self.send_cmd(f"SET_MOUSE_MODE {mode}"))
+
+        def _parse_ok_list(resp: str):
+            if not isinstance(resp, str) or not resp.startswith("OK"):
+                return []
+            parts = resp.split(maxsplit=1)
+            if len(parts) < 2 or not parts[1].strip():
+                return []
+            out = []
+            for x in parts[1].split(","):
+                x = x.strip()
+                if x.isdigit():
+                    out.append(int(x))
+            return out
+
+        def refresh_camera_dropdown():
+            resp = self.send_cmd("GET_CAMERAS")
+            print("[UI] GET_CAMERAS ->", resp)
+            cams = _parse_ok_list(resp)
+
+            camera_combo.blockSignals(True)
+            camera_combo.clear()
+            for i in cams:
+                camera_combo.addItem(f"Camera {i}", i)
+            for j in range(camera_combo.count()):
+                camera_combo.setItemData(j, Qt.AlignCenter, Qt.TextAlignmentRole)
+            camera_combo.blockSignals(False)
+
+            # highlight current camera
+            cur_resp = self.send_cmd("GET_CAMERA")
+            print("[UI] GET_CAMERA ->", cur_resp)
+            if isinstance(cur_resp, str) and cur_resp.startswith("OK"):
+                try:
+                    cur = int(cur_resp.split()[1])
+                    camera_combo.blockSignals(True)
+                    for idx in range(camera_combo.count()):
+                        if camera_combo.itemData(idx) == cur:
+                            camera_combo.setCurrentIndex(idx)
+                            break
+                    camera_combo.blockSignals(False)
+                except Exception:
+                    camera_combo.blockSignals(False)
+                    pass
+
+        def apply_selected_camera():
+            cam_id = camera_combo.currentData()
+            if cam_id is None:
+                return
+            resp = self.send_cmd(f"SET_CAMERA {int(cam_id)}")
+            print("[UI] SET_CAMERA ->", resp)
+
+        camera_combo.currentIndexChanged.connect(lambda _=None: apply_selected_camera())
+
+        # initial load
+        refresh_camera_dropdown()
 
         def _apply_vectors():
             txt = hand_vectors_options.currentText().strip()

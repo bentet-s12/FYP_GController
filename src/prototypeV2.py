@@ -22,7 +22,7 @@ from PySide6.QtGui import QImage, QPixmap, QFont, QShortcut , QKeySequence
 from PySide6.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QSlider, QCheckBox, QFrame
 )
-
+from PySide6.QtMultimedia import QMediaDevices
 from Actions import Actions  # your pydirectinput-based Actions.py
 # ================== PATH CONFIG ==================
 
@@ -568,6 +568,23 @@ class CameraWindow(QWidget):
 
         root.addWidget(self.lbl_detected)
 
+        # --- Camera info row (no QComboBox; use shortcut to cycle) ---
+        row_cam = QHBoxLayout()
+        lbl_cam_title = QLabel("Camera: ")
+        font_cam = lbl_cam_title.font()
+        font_cam.setPointSize(16)
+        lbl_cam_title.setFont(font_cam)
+        row_cam.addWidget(lbl_cam_title)
+
+        self.lbl_camera = QLabel("")
+        self.lbl_camera.setFont(font_cam)
+        self.lbl_camera.setStyleSheet("color: #e0dde5;")
+        row_cam.addWidget(self.lbl_camera, stretch=1)
+
+        c.addLayout(row_cam)
+
+        # initialize camera label
+        self.refresh_camera_label()
 
         # Contrast slider: map UI 0..350 => contrast -0.5..3.0
         row1 = QHBoxLayout()
@@ -644,6 +661,21 @@ class CameraWindow(QWidget):
             text = "nothing"
         self.lbl_detected.setText(f"Detected: {text}")
 
+    def refresh_camera_label(self):
+        try:
+            idx = getattr(self.app, "camera_index", None)
+            cams = getattr(self.app, "camera_indices", None)
+            n = len(cams) if isinstance(cams, list) else None
+            if idx is None:
+                txt = "Unknown"
+            elif n is None:
+                txt = f"{idx}"
+            else:
+                txt = f"{idx}  ({(cams.index(idx)+1) if idx in cams else '?'} / {n})"
+        except Exception:
+            txt = "Unknown"
+
+        self.lbl_camera.setText(txt)
 
     def _on_contrast(self, v: int):
         self.app.cam_contrast = (float(v) / 100.0) - 0.50
@@ -1075,6 +1107,10 @@ class CommandServer(threading.Thread):
                             self.app.cycle_mouse_mode()
                             conn.sendall(b"OK\n")
 
+                        elif data == "CYCLE_CAMERA":
+                            self.app.cycle_camera()
+                            conn.sendall(b"OK\n")
+
                         elif data == "TOGGLE_VECTORS":
                             try:
                                 self.app.toggle_hand_vectors()
@@ -1096,6 +1132,18 @@ class CommandServer(threading.Thread):
                         elif data == "GET_MOUSE_MODE":
                             # return something like: DISABLED / CAMERA / CURSOR
                             conn.sendall((f"OK {self.app.mouse_mode}\n").encode("utf-8"))
+                        
+                        elif data == "GET_CAMERA":
+                            idx = getattr(self.app, "camera_index", 0)
+                            conn.sendall(f"OK {idx}\n".encode("utf-8"))
+
+                        elif data == "GET_CAMERAS":
+                            try:
+                                cams = self.app.get_available_cameras()
+                                payload = ",".join(str(x) for x in cams)
+                                conn.sendall(f"OK {payload}\n".encode("utf-8"))
+                            except Exception as e:
+                                conn.sendall(f"ERR {e}\n".encode("utf-8", errors="ignore"))
 
                         elif data.startswith("SET_HAND_MODE"):
                             parts = data.split(maxsplit=1)
@@ -1112,6 +1160,18 @@ class CommandServer(threading.Thread):
                             else:
                                 ok = self.app.set_mouse_mode(parts[1].strip())
                                 conn.sendall(b"OK\n" if ok else b"ERR Bad mode\n")
+
+                        elif data.startswith("SET_CAMERA"):
+                            parts = data.split(maxsplit=1)
+                            if len(parts) < 2:
+                                conn.sendall(b"ERR Missing index\n")
+                            else:
+                                try:
+                                    idx = int(parts[1].strip())
+                                    self.app.request_camera_switch(idx)
+                                    conn.sendall(b"OK\n")
+                                except Exception as e:
+                                    conn.sendall(f"ERR {e}\n".encode("utf-8", errors="ignore"))
 
                         elif data.startswith("SET_VECTORS"):
                             parts = data.split(maxsplit=1)
@@ -1233,7 +1293,17 @@ class GestureControllerApp:
         self.camera_qt = None
         self._last_frame_for_qt = None
 
+        # --- camera selection state ---
+        self.camera_index = 0
+        self._req_camera_index = None
+        self._camera_cycle = []
+        self._camera_cycle_idx = 0
+        self.camera_indices = [0]
 
+        self._cam_fail = 0
+        self._cam_reopen_attempts = 0
+        self._cam_last_reopen_t = 0.0
+        self._cam_disabled = False
 
         if self.enable_camera:
             self._init_camera_and_models()
@@ -1241,6 +1311,66 @@ class GestureControllerApp:
         
         if self.gui is not None:
             self.gui.hide()
+
+    def _switch_to_camera(self, idx: int) -> bool:
+        print(f"[CAM] Switching to camera {idx}", flush=True)
+
+        new_cap = cv2.VideoCapture(idx)  # or your _open_capture(idx) if you have it
+        if not new_cap.isOpened():
+            print(f"[CAM] Failed to open camera {idx}", flush=True)
+            try: new_cap.release()
+            except Exception: pass
+            return False
+
+        ok, _ = new_cap.read()
+        if not ok:
+            print(f"[CAM] Camera {idx} opened but no frames", flush=True)
+            try: new_cap.release()
+            except Exception: pass
+            return False
+
+        # swap
+        try:
+            if getattr(self, "cap", None) is not None:
+                self.cap.release()
+        except Exception:
+            pass
+
+        self.cap = new_cap
+        self.camera_index = int(idx)
+        return True
+    
+    def get_available_cameras(self):
+        """
+        Stable camera listing using Qt.
+        Returns [0..N-1] indexes matching Qt device order.
+        """
+        devices = QMediaDevices.videoInputs()
+        cams = list(range(len(devices)))
+
+        # debug names
+        try:
+            names = [d.description() for d in devices]
+            print("[CAM] Qt devices:", list(enumerate(names)), flush=True)
+        except Exception:
+            print("[CAM] Qt devices count:", len(devices), flush=True)
+
+        return cams if cams else [0]
+    
+    def request_camera_switch(self, idx: int):
+        """Schedule camera switch (do it inside the run loop)."""
+        self._cam_disabled = False
+        self._req_camera_index = int(idx)
+        print("[CAM] Requested camera switch to:", idx, flush=True)
+
+    def _apply_camera_switch_if_needed(self):
+        """Apply a pending camera switch requested via self._req_camera_index."""
+        if self._req_camera_index is None:
+            return
+
+        idx = int(self._req_camera_index)
+        self._req_camera_index = None
+        self._switch_to_camera(idx)
 
     def _start_gui_thread(self):
         self._gui_thread = threading.Thread(target=self._gui_thread_main, daemon=True)
@@ -1333,7 +1463,20 @@ class GestureControllerApp:
         self._install_camera_shortcuts_from_pm()
 
     def _init_camera_and_models(self):
-        self.cap = cv2.VideoCapture(0)
+        if self.enable_camera:
+            # Detect cameras
+            self.camera_indices = self.get_available_cameras()
+
+            if not self.camera_indices:
+                self.camera_indices = [0]
+
+            # Start with first detected camera
+            self.camera_index = self.camera_indices[0]
+
+            print("[CAM] Available cameras:", self.camera_indices, flush=True)
+            print("[CAM] Starting with camera:", self.camera_index, flush=True)
+
+            self.cap = cv2.VideoCapture(self.camera_index)
         if not self.cap.isOpened():
             raise RuntimeError("[CAM] Failed to open camera.")
 
@@ -1997,7 +2140,15 @@ class GestureControllerApp:
 
         print(f"[MODE] Mouse mode switched to: {self.mouse_mode}", flush=True)
 
-
+    def cycle_camera(self):
+        cams = self.get_available_cameras()
+        cur = getattr(self, "camera_index", cams[0])
+        if cur not in cams:
+            cur = cams[0]
+        pos = cams.index(cur)
+        nxt = cams[(pos + 1) % len(cams)]
+        print(f"[CAM] Cycle {cur} -> {nxt} | {cams}", flush=True)
+        self.request_camera_switch(nxt)
 
 
     def enforce_hand_suffix(self, pred_label: str, hand_label: str) -> str:
@@ -2151,6 +2302,57 @@ class GestureControllerApp:
 
         while self.running:
 
+            if self._req_camera_index is not None:
+                idx = self._req_camera_index
+                self._req_camera_index = None
+                self._switch_to_camera(idx)
+
+            if getattr(self, "_cam_disabled", False):
+                time.sleep(0.05)
+                continue
+
+            if self.enable_camera and self.cap is not None:
+                ret, frame = self.cap.read()
+
+            if self.enable_camera and self.cap:
+                ret, frame = self.cap.read()
+                if not ret:
+                    self._cam_fail += 1
+
+                    # small backoff every fail to stop log hammering
+                    time.sleep(0.02)
+
+                    # only try reopen every 2 seconds (cooldown)
+                    now = time.perf_counter()
+                    if self._cam_fail >= 10 and (now - self._cam_last_reopen_t) > 2.0:
+                        self._cam_last_reopen_t = now
+                        self._cam_fail = 0
+                        self._cam_reopen_attempts += 1
+
+                        print("[CAM] Too many read fails, reopening camera", flush=True)
+
+                        ok = self._switch_to_camera(self.camera_index)
+                        if not ok:
+                            print(f"[CAM] Reopen failed (attempt {self._cam_reopen_attempts})", flush=True)
+
+                        # after N failed reopen attempts, disable camera to stop infinite spam
+                        if self._cam_reopen_attempts >= 5:
+                            print("[CAM] Camera seems unavailable. Disabling camera until user toggles/cycles.", flush=True)
+                            self._cam_disabled = True
+                            try:
+                                if self.cap is not None:
+                                    self.cap.release()
+                            except Exception:
+                                pass
+                            self.cap = None
+
+                    continue
+
+                # success path
+                self._cam_fail = 0
+                self._cam_reopen_attempts = 0
+
+            self._apply_camera_switch_if_needed()
             # ---- apply pending requests (main thread) ----
             self._req_cycle_hand_mode = False
             self._req_cycle_mouse_mode = False
